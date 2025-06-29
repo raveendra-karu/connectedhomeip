@@ -262,44 +262,51 @@ void PushAvStreamTransportServer::HandleAllocatePushTransport(HandlerContext & c
             ChipLogError(Zcl, "HandleAllocatePushTransport: Invalid TLSEndpointId not found");
             ctx.mCommandHandler.AddClusterSpecificFailure(ctx.mRequestPath, status);
             return;
-        }
-
-        if (transportOptions.ingestMethod == IngestMethodsEnum::kUnknownEnumValue)
-        {
-            auto status = static_cast<uint8_t>(StatusCodeEnum::kUnsupportedIngestMethod);
-            ChipLogError(Zcl, "HandleAllocatePushTransport: Ingest method not supported");
-            ctx.mCommandHandler.AddClusterSpecificFailure(ctx.mRequestPath, status);
-            return;
-        }
-
-        if (transportOptions.containerFormat == ContainerFormatEnum::kUnknownEnumValue)
-        {
-            auto status = static_cast<uint8_t>(StatusCodeEnum::kUnsupportedContainerFormat);
-            ChipLogError(Zcl, "HandleAllocatePushTransport: Container format not supported");
-            ctx.mCommandHandler.AddClusterSpecificFailure(ctx.mRequestPath, status);
-            return;
-        }
-
-        if (transportOptions.triggerOptions.triggerType == TransportTriggerTypeEnum::kUnknownEnumValue)
-        {
-            auto status = static_cast<uint8_t>(StatusCodeEnum::kInvalidTriggerType);
-            ChipLogError(Zcl, "HandleAllocatePushTransport: Invalid Trigger type");
-            ctx.mCommandHandler.AddClusterSpecificFailure(ctx.mRequestPath, status);
-            return;
-        }
-
-        // Todo: Validate MotionZones list in the TransportTriggerOptionsStruct field
-
-        // Validate the StreamUsageEnum as per resource management and stream priorities.
-        CHIP_ERROR err =
-            mDelegate.ValidateStreamUsage(transportOptions.streamUsage, transportOptions.videoStreamID,
-       transportOptions.audioStreamID); if (err != CHIP_NO_ERROR)
-        {
-            auto status = static_cast<uint8_t>(StatusCodeEnum::kInvalidStream);
-            ChipLogError(Zcl, "HandleAllocatePushTransport: Invalid Stream");
-            ctx.mCommandHandler.AddClusterSpecificFailure(ctx.mRequestPath, status);
-            return;
         }*/
+
+    // TODO Validate the TLSEndpointID is not found
+
+    // TODO Validate the FabricIndex field on the requested TLSEndpointID does not match the accessing Local Fabric Index entry
+    // stored in the Secure Session Context
+
+    if (transportOptions.ingestMethod == IngestMethodsEnum::kUnknownEnumValue)
+    {
+        auto status = static_cast<uint8_t>(StatusCodeEnum::kUnsupportedIngestMethod);
+        ChipLogError(Zcl, "HandleAllocatePushTransport: Ingest method not supported");
+        ctx.mCommandHandler.AddClusterSpecificFailure(ctx.mRequestPath, status);
+        return;
+    }
+
+    if (transportOptions.containerFormat == ContainerFormatEnum::kUnknownEnumValue)
+    {
+        auto status = static_cast<uint8_t>(StatusCodeEnum::kUnsupportedContainerFormat);
+        ChipLogError(Zcl, "HandleAllocatePushTransport: Container format not supported");
+        ctx.mCommandHandler.AddClusterSpecificFailure(ctx.mRequestPath, status);
+        return;
+    }
+
+    if (transportOptions.triggerOptions.triggerType == TransportTriggerTypeEnum::kUnknownEnumValue)
+    {
+        auto status = static_cast<uint8_t>(StatusCodeEnum::kInvalidTriggerType);
+        ChipLogError(Zcl, "HandleAllocatePushTransport: Invalid Trigger type");
+        ctx.mCommandHandler.AddClusterSpecificFailure(ctx.mRequestPath, status);
+        return;
+    }
+
+    // TODO Validate the URL is invalid
+    // TODO Validate MotionZones list in the TransportTriggerOptionsStruct field
+    // TODO Validate the StreamUsageEnum as per resource management and stream priorities.
+    // TODO Validates the requested stream usage against the camera's resource management and stream priority policies.
+
+    CHIP_ERROR err =
+        mDelegate.ValidateStreamUsage(transportOptions.streamUsage, transportOptions.videoStreamID, transportOptions.audioStreamID);
+    if (err != CHIP_NO_ERROR)
+    {
+        auto status = static_cast<uint8_t>(StatusCodeEnum::kInvalidStream);
+        ChipLogError(Zcl, "HandleAllocatePushTransport: Invalid Stream");
+        ctx.mCommandHandler.AddClusterSpecificFailure(ctx.mRequestPath, status);
+        return;
+    }
 
     uint16_t connectionID = GenerateConnectionID();
 

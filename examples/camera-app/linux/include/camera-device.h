@@ -35,7 +35,7 @@
 #define AUDIO_STREAM_GST_DEST_PORT 5001
 // TODO: Define a configuration flag and enable/disable during the build. Configure this after the controller/TH side UI is ready.
 // Enable to use test src instead of hardware source for testing purposes.
-// #define AV_STREAM_GST_USE_TEST_SRC
+#define AV_STREAM_GST_USE_TEST_SRC
 
 // Camera Constraints set to typical values.
 // TODO: Look into ways to fetch from hardware, if required/possible.
@@ -91,7 +91,7 @@ public:
     // HAL interface impl
     CameraError InitializeCameraDevice() override;
 
-    CameraError InitializeStreams() override;
+    CameraError InitializeStreams(AudioStreamStruct & audioStreamParams, VideoStreamStruct & videoStreamParams) override;
 
     CameraError CaptureSnapshot(const chip::app::DataModel::Nullable<uint16_t> streamID, const VideoResolutionStruct & resolution,
                                 ImageSnapshot & outImageSnapshot) override;
@@ -213,8 +213,8 @@ private:
     std::vector<AudioStream> audioStreams;       // Vector to hold available audio streams
     std::vector<SnapshotStream> snapshotStreams; // Vector to hold available snapshot streams
 
-    void InitializeVideoStreams();
-    void InitializeAudioStreams();
+    VideoStreamStruct InitializeVideoStreams();
+    AudioStreamStruct InitializeAudioStreams();
     void InitializeSnapshotStreams();
 
     GstElement * CreateVideoPipeline(const std::string & device, int width, int height, int framerate, CameraError & error);

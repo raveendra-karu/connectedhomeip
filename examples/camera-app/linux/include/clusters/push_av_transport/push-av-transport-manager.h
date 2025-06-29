@@ -25,6 +25,7 @@
 #include <app/clusters/push-av-stream-transport-server/push-av-stream-transport-server.h>
 #include <protocols/interaction_model/StatusCode.h>
 #include <pushav-transport/pushav-transport.h>
+#include <camera-device-interface.h>
 
 #include <unordered_map>
 
@@ -80,11 +81,14 @@ public:
 
     CHIP_ERROR PersistentAttributesLoadedCallback() override;
 
-    void Init(MediaController * aMediaController);
+    void Init(MediaController * aMediaController,  AudioStreamStruct aAudioStreamParams, VideoStreamStruct aVideoStreamParams);
+
+    void ConfigureRecorderSettings(PushAVTransport * transport, const TransportOptionsDecodeableStruct & transportOptions, TransportConfigurationStruct & outTransporConfiguration);
 
 private:
     MediaController * mMediaController = nullptr;
-
+    AudioStreamStruct mAudioStreamParams;
+    VideoStreamStruct mVideoStreamParams;
     std::unordered_map<uint16_t, std::unique_ptr<PushAVTransport>> mTransportMap;        // map for the transport objects
     std::unordered_map<uint16_t, TransportOptionsDecodeableStruct> mTransportOptionsMap; // map for the transport options
     std::unordered_map<uint16_t, TransportConfigurationStruct> mTransportConfigMap;      // map for the transport configurations

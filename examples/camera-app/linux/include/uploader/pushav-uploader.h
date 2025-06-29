@@ -25,18 +25,18 @@
 #include <string>
 #include <thread>
 
-typedef struct upload_data_info
+typedef struct UploadDataInfo
 {
-    char * data;
-    int size;
-    int bytes_read;
+    char * mData;
+    long mSize;
+    long mBytesRead;
 } PushAvUploadInfo;
 
-typedef struct cerficates_info
+typedef struct CerficatesInfo
 {
-    std::string root_cert;
-    std::string dev_cert;
-    std::string dev_key;
+    std::string mRootCert;
+    std::string mDevCert;
+    std::string mDevKey;
 } PushAVCertPath;
 
 class PushAVUploader
@@ -47,15 +47,14 @@ public:
 
     void Start();
     void Stop();
-    void AddFileToUpload(std::string& filename, std::string& url);
+    void AddUploadData(std::string & filename, std::string & url);
 
 private:
-    void ProcessUploadQueue();
+    void ProcessQueue();
     void UploadData(std::pair<std::string, std::string> data);
 
-    std::queue<std::pair <std::string, std::string>> av_data;
-    std::mutex queue_mutex;
-    std::atomic<bool> running;
-    std::thread uploader_thread;
+    std::queue<std::pair<std::string, std::string>> mAvData;
+    std::mutex mQueueMutex;
+    std::atomic<bool> mIsRunning;
+    std::thread mUploaderThread;
 };
-

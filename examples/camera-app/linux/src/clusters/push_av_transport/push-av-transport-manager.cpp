@@ -24,8 +24,8 @@
 #include <iostream>
 #include <lib/support/logging/CHIPLogging.h>
 #include <push-av-transport-manager.h>
-#include <pushav-transport.h>
 #include <pushav-clip-recorder.h>
+#include <pushav-transport.h>
 
 using namespace chip;
 using namespace chip::app;
@@ -36,61 +36,181 @@ using chip::Protocols::InteractionModel::Status;
 using namespace Camera;
 
 // TODO: ConfigureRecorderSettings improvements needed
-// 1. Replace hardcoded audio/video settings with values from camera-av-stream-manager structs
-// 2. Implement proper storage path resolution instead of fixed "/workspace/"
-// 3. Calculate frame durations dynamically from stream properties
-// 4. Add safety checks before accessing Optional values
-// 5. Remove direct struct assignments - initialize fields individually
-void ConfigureRecorderSettings(PushAVTransport * transport,
-                                const TransportOptionsDecodeableStruct & transportOptions,
-                                TransportConfigurationStruct & outTransporConfiguration){
+// 1. Implement proper storage path resolution instead of fixed "./clips/"
+// 2. Calculate frame durations dynamically from stream properties
+
+const char * GetAudioCodecName(int codecId)
+{
+    switch (codecId)
+    {
+    case AV_CODEC_ID_OPUS:
+        return "OPUS";
+    default:
+        return "Unknown";
+    }
+}
+
+const char * GetVideoCodecName(int codecId)
+{
+    switch (codecId)
+    {
+    case AV_CODEC_ID_H264:
+        return "H.264";
+    default:
+        return "Unknown";
+    }
+}
+
+void PrintTransportSettings1(PushAVTransport * transport)
+{
+    const auto & clipInfo  = transport->clipInfo;
+    const auto & audioInfo = transport->audioInfo;
+    const auto & videoInfo = transport->videoInfo;
+
+    ChipLogProgress(Camera, "=== Clip Configuration ===");
+    ChipLogProgress(Camera, "Has Audio: %s", clipInfo.mHasAudio ? "true" : "false");
+    ChipLogProgress(Camera, "Has Video: %s", clipInfo.mHasVideo ? "true" : "false");
+    ChipLogProgress(Camera, "Initial Duration: %d sec", clipInfo.mInitialDuration);
+    ChipLogProgress(Camera, "Augmentation Duration: %d sec", clipInfo.mAugmentationDuration);
+    ChipLogProgress(Camera, "Max Clip Duration: %d sec", clipInfo.mMaxClipDuration);
+    ChipLogProgress(Camera, "Chunk Duration: %d sec", clipInfo.mChunkDuration);
+    ChipLogProgress(Camera, "URL: %s", clipInfo.mUrl.c_str());
+    ChipLogProgress(Camera, "Trigger Type: %d", clipInfo.mTriggerType);
+    ChipLogProgress(Camera, "recorder id %s", clipInfo.mRecorderId.c_str());
+    ChipLogProgress(Camera, "Output Path: %s", clipInfo.mOutputPath.c_str());
+    ChipLogProgress(Camera, "Input Time Base: %d/%d", clipInfo.mInputTimeBase.num, clipInfo.mInputTimeBase.den);
+
+    ChipLogProgress(Camera, "=== Audio Configuration ===");
+    ChipLogProgress(Camera, "Codec: %s", GetAudioCodecName(audioInfo.mAudioCodecId));
+    ChipLogProgress(Camera, "Channels: %d", audioInfo.mChannels);
+    ChipLogProgress(Camera, "Sample Rate: %d Hz", audioInfo.mSampleRate);
+    ChipLogProgress(Camera, "Bit Rate: %d bps", audioInfo.mBitRate);
+    ChipLogProgress(Camera, "Audio Time Base: %d/%d", audioInfo.mAudioTimeBase.num, audioInfo.mAudioTimeBase.den);
+    ChipLogProgress(Camera, "Frame Duration: %d samples", audioInfo.mAudioFrameDuration);
+
+    ChipLogProgress(Camera, "=== Video Configuration ===");
+    ChipLogProgress(Camera, "Codec: %s", GetVideoCodecName(videoInfo.mVideoCodecId));
+    ChipLogProgress(Camera, "Resolution: %dx%d", videoInfo.mWidth, videoInfo.mHeight);
+    ChipLogProgress(Camera, "Frame Rate: %d fps", videoInfo.mFrameRate);
+    ChipLogProgress(Camera, "Video Time Base: %d/%d", videoInfo.mVideoTimeBase.num, videoInfo.mVideoTimeBase.den);
+    ChipLogProgress(Camera, "Frame Duration: %d ticks", videoInfo.mVideoFrameDuration);
+    ChipLogProgress(Camera, "Bit Rate: %d bps", videoInfo.mBitRate);
+}
+
+void PushAvStreamTransportManager::ConfigureRecorderSettings(PushAVTransport * transport,
+                                                             const TransportOptionsDecodeableStruct & transportOptions,
+                                                             TransportConfigurationStruct & outTransporConfiguration)
+{
 
     PushAVClipRecorder::ClipInfoStruct clipInfo;
     PushAVClipRecorder::AudioInfoStruct audioInfo;
     PushAVClipRecorder::VideoInfoStruct videoInfo;
 
-    clipInfo.mHasAudio = transport->CanSendAudio();
-    clipInfo.mHasVideo = transport->CanSendVideo();
-    clipInfo.mMaxClipDuration = outTransporConfiguration.transportOptions.triggerOptions.motionTimeControl.Value().initialDuration;
-    clipInfo.mChunkDuration = outTransporConfiguration.transportOptions.containerOptions.CMAFContainerOptions.Value().chunkDuration;
-    clipInfo.mAudioStreamID = outTransporConfiguration.transportOptions.audioStreamID.Value();
-    clipInfo.mVideoStreamID = outTransporConfiguration.transportOptions.videoStreamID.Value();
-    clipInfo.mClipID = 0;
-    clipInfo.mRecorderID = std::to_string(clipInfo.mVideoStreamID) + "-" + std::to_string(clipInfo.mAudioStreamID);
-    clipInfo.mOutputPath = "/workspace/";
-    clipInfo.mSupportedCodec = {
-            AV_CODEC_ID_OPUS,
-            AV_CODEC_ID_H264
-        };
-    clipInfo.mInputTb = { 1, 1000000 };
+    clipInfo.mHasAudio = true;
+    clipInfo.mHasVideo = true;
 
-    audioInfo.mChannelLayout = AV_CH_LAYOUT_STEREO;
-    audioInfo.mChannels = 2;
-    audioInfo.mAudioCodecId = AV_CODEC_ID_OPUS;
-    audioInfo.mSampleRate = 48000;
-    audioInfo.mBitRate = 20000;
-    audioInfo.mAPts = 0;
-    audioInfo.mADts = 0;
-    audioInfo.aStreamIndex = -1;
-    audioInfo.mAudioFrameDuration = 960;
-    audioInfo.mAudioTb = { 1, audioInfo.mSampleRate }; 
+    if (outTransporConfiguration.transportOptions.HasValue())
+    {
+        clipInfo.mUrl = outTransporConfiguration.transportOptions.Value().url.data();
+        if (0 /* outTransporConfiguration.transportOptions.Value().triggerOptions.motionTimeControl.HasValue()*/)
+        {
+            clipInfo.mInitialDuration =
+                outTransporConfiguration.transportOptions.Value().triggerOptions.motionTimeControl.Value().initialDuration;
+            clipInfo.mAugmentationDuration =
+                outTransporConfiguration.transportOptions.Value().triggerOptions.motionTimeControl.Value().augmentationDuration;
+            clipInfo.mMaxClipDuration =
+                outTransporConfiguration.transportOptions.Value().triggerOptions.motionTimeControl.Value().maxDuration;
+            clipInfo.mBlindDuration =
+                outTransporConfiguration.transportOptions.Value().triggerOptions.motionTimeControl.Value().blindDuration;
+        }
+        else
+        {
+            clipInfo.mInitialDuration      = 30;
+            clipInfo.mAugmentationDuration = 20;
+            clipInfo.mBlindDuration        = 5;
+            clipInfo.mMaxClipDuration      = 100;
+        }
+        if (0 /*outTransporConfiguration.transportOptions.Value().containerOptions.CMAFContainerOptions.HasValue()*/)
+        {
+            clipInfo.mChunkDuration =
+                outTransporConfiguration.transportOptions.Value().containerOptions.CMAFContainerOptions.Value().chunkDuration;
+        }
+        else
+        {
+            clipInfo.mChunkDuration = 5;
+        }
+    }
+    else
+    {
+        clipInfo.mInitialDuration      = 30;
+        clipInfo.mAugmentationDuration = 20;
+        clipInfo.mBlindDuration        = 5;
+        clipInfo.mMaxClipDuration      = 100;
+        clipInfo.mChunkDuration        = 5;
+        clipInfo.mUrl                  = "https://localhost:1234/streams/1/";
+    }
 
-    videoInfo.mVideoCodecId = AV_CODEC_ID_H264;
-    videoInfo.mVPts = 0;
-    videoInfo.mVDts = 0;
-    videoInfo.mWidth = 320;
-    videoInfo.mHeight = 240;
-    videoInfo.mFrameRate = 15;
-    videoInfo.mVideoFrameDuration = 66667;
-    videoInfo.mVideoTb = { 1, 90000 };
-    videoInfo.vStreamIndex = -1;
-    videoInfo.mBitRate = 0;
+    clipInfo.mUrl           = "https://localhost:1234/streams/1/";
+    int triggerType         = static_cast<int>(transportOptions.triggerOptions.triggerType);
+    clipInfo.mTriggerType   = triggerType;
+    clipInfo.mClipId        = 0;
+    clipInfo.mOutputPath    = "./clips/";
+    clipInfo.mInputTimeBase = { 1, 1000000 };
 
-    transport->clipInfo = clipInfo;
+    uint8_t audioCodec  = static_cast<uint8_t>(mAudioStreamParams.audioCodec);
+    audioInfo.mChannels = 1; // mAudioStreamParams.channelCount;
+
+    if (audioCodec == 0)
+    {
+        audioInfo.mAudioCodecId       = AV_CODEC_ID_OPUS;
+        audioInfo.mAudioTimeBase      = { 1, 48000 };
+        audioInfo.mAudioFrameDuration = 19200;
+    }
+    else if (audioCodec == 2)
+    {
+        ChipLogError(Camera, "Unknown Audio codec")
+    }
+    else
+    {
+        ChipLogError(Camera, "Unsupported Audio codec");
+    }
+
+    audioInfo.mSampleRate       = mAudioStreamParams.sampleRate;
+    audioInfo.mBitRate          = mAudioStreamParams.bitRate;
+    audioInfo.mAudioPts         = 0;
+    audioInfo.mAudioDts         = 0;
+    audioInfo.mAudioStreamIndex = -1;
+
+    int8_t VideoCodec = static_cast<uint8_t>(mVideoStreamParams.videoCodec);
+    if (VideoCodec == 0)
+    {
+        videoInfo.mVideoCodecId  = AV_CODEC_ID_H264;
+        videoInfo.mVideoTimeBase = { 1, 90000 };
+    }
+    else if (VideoCodec == 4)
+    {
+        ChipLogError(Camera, "Unknown Video codec")
+    }
+    else
+    {
+        ChipLogError(Camera, "Unsupported Video codec");
+    }
+    videoInfo.mVideoPts  = 0;
+    videoInfo.mVideoDts  = 0;
+    videoInfo.mWidth     = mVideoStreamParams.maxResolution.width;
+    videoInfo.mHeight    = mVideoStreamParams.maxResolution.height;
+    videoInfo.mFrameRate = mVideoStreamParams.minFrameRate;
+
+    videoInfo.mVideoFrameDuration = 900000 / videoInfo.mFrameRate;
+    videoInfo.mVideoStreamIndex   = -1;
+    videoInfo.mBitRate            = mVideoStreamParams.minBitRate;
+
+    transport->clipInfo  = clipInfo;
     transport->audioInfo = audioInfo;
     transport->videoInfo = videoInfo;
+    PrintTransportSettings1(transport);
+    ChipLogProgress(Camera, "PushAvStreamTransportManager, Configure Recorder Settings done !!!");
 }
-
 
 Protocols::InteractionModel::Status
 PushAvStreamTransportManager::AllocatePushTransport(const TransportOptionsDecodeableStruct & transportOptions,
@@ -102,10 +222,12 @@ PushAvStreamTransportManager::AllocatePushTransport(const TransportOptionsDecode
     mTransportConfigMap[connectionID]  = outTransporConfiguration;
 
     ChipLogProgress(Camera, "PushAvStreamTransportManager, Create PushAV Transport for Connection: [%u]", connectionID);
-    mTransportMap[connectionID] =
-        std::move(std::make_unique<PushAVTransport>(connectionID, transportOptions.url.data(), transportOptions.triggerOptions.triggerType));
+    mTransportMap[connectionID] = std::move(
+        std::make_unique<PushAVTransport>(connectionID, transportOptions.url.data(), transportOptions.triggerOptions.triggerType));
 
-    mMediaController->RegisterTransport(mTransportMap[connectionID].get(), transportOptions.videoStreamID.Value(), transportOptions.audioStreamID.Value());
+    mMediaController->RegisterTransport(mTransportMap[connectionID].get(), transportOptions.videoStreamID.Value().Value(),
+                                        transportOptions.audioStreamID.Value().Value());
+
     ConfigureRecorderSettings(mTransportMap[connectionID].get(), transportOptions, outTransporConfiguration);
 
     return Status::Success;
@@ -223,13 +345,15 @@ PushAvStreamTransportManager::FindTransport(const Optional<DataModel::Nullable<u
 
     std::vector<TransportConfigurationStruct> configList;
 
-    if (connectionID.Value().IsNull()) {
+    if (connectionID.Value().IsNull())
+    {
         for (auto & it : mTransportConfigMap)
         {
             configList.push_back(it.second);
         }
     }
-    else {
+    else
+    {
         for (auto & it : mTransportConfigMap)
         {
             if (connectionID.Value().Value() == it.first)
@@ -240,7 +364,7 @@ PushAvStreamTransportManager::FindTransport(const Optional<DataModel::Nullable<u
     }
 
     outTransportConfigurations = DataModel::List<const TransportConfigurationStruct>(configList.data(), configList.size());
-    
+
     return Status::Success;
 }
 
@@ -258,9 +382,12 @@ void PushAvStreamTransportManager::OnAttributeChanged(AttributeId attributeId)
     ChipLogProgress(Zcl, "Attribute changed for AttributeId = " ChipLogFormatMEI, ChipLogValueMEI(attributeId));
 }
 
-void PushAvStreamTransportManager::Init(MediaController * mediaController)
+void PushAvStreamTransportManager::Init(MediaController * mediaController, AudioStreamStruct aAudioStreamParams,
+                                        VideoStreamStruct aVideoStreamParams)
 {
-    mMediaController = mediaController;
+    mMediaController   = mediaController;
+    mVideoStreamParams = aVideoStreamParams;
+    mAudioStreamParams = aAudioStreamParams;
     return;
 }
 

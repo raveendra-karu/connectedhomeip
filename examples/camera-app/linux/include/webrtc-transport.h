@@ -22,7 +22,7 @@
 #include <rtc/rtc.hpp>
 
 // Derived class for WebRTC transport
-class WebrtcTransport : public Transport
+class WebrtcTransport : public camera::Transport
 {
 public:
     WebrtcTransport(uint16_t sessionID, uint64_t nodeID, std::shared_ptr<rtc::PeerConnection> mPeerConnection);

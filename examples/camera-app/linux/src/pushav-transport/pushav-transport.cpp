@@ -16,7 +16,7 @@
  *    limitations under the License.
  */
 
-#include <pushav-transport/pushav-transport.h>
+#include <pushav-transport.h>
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/avutil.h>
@@ -30,13 +30,18 @@ PushAVTransport::PushAVTransport(uint16_t connectionID, const char * url, Transp
     serverUrl             = url;
 }
 
-void PushAVTransport::initializeRecorder()
+void PushAVTransport::InitializeRecorder()
 {
     if (!isRecorderInitialized)
     {
-        recorder = std::make_unique<PushAVClipRecorder>(clipInfo, audioInfo, videoInfo, serverUrl);
+        recorder              = std::make_unique<PushAVClipRecorder>(clipInfo, audioInfo, videoInfo, uploader.get());
         isRecorderInitialized = true;
     }
+    else
+    {
+        ChipLogError(Camera, "Recorder already initialized");
+    }
+    clipInfo.mClipId++;
 }
 
 PushAVTransport::~PushAVTransport()
@@ -45,28 +50,95 @@ PushAVTransport::~PushAVTransport()
     mCanSendVideo = false;
     mCanSendAudio = false;
     recorder->Stop();
-    // TODO cleanup the existing recorded files here.
     isRecorderInitialized = false;
+}
+
+bool PushAVTransport::InBlindPeriod()
+{
+    if (blindStartTime == std::chrono::steady_clock::time_point())
+    {
+        return false;
+    }
+    else
+    {
+        auto now     = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - blindStartTime).count();
+        ChipLogProgress(Camera, "PushAVTransport blind period elapsed: %ld", elapsed);
+        return (elapsed < recorder->mClipInfo.mBlindDuration);
+    }
+}
+
+bool PushAVTransport::HandleTriggerDetected()
+{
+    auto now     = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - recorder->mClipInfo.activationTime).count();
+    ChipLogError(Camera, "PushAVTransport HandleTriggerDetected elapsed: %ld", elapsed);
+    if (InBlindPeriod())
+    {
+        return false;
+    }
+
+    if (!recorder->mRunning)
+    {
+        // Start new recording
+        // recorder->mClipInfo.activationTime = std::chrono::steady_clock::now();
+        hasAugmented = false;
+        recorder->Start();
+    }
+    else
+    {
+        // Extend existing recording
+        uint16_t previousDuration = recorder->mClipInfo.mInitialDuration - recorder->mClipInfo.mAugmentationDuration;
+
+        if ((elapsed < recorder->mClipInfo.mInitialDuration) && (!hasAugmented || elapsed >= previousDuration))
+        {
+            ChipLogError(Camera, "PushAVTransport extending recording %d -> %d", recorder->mClipInfo.mInitialDuration,
+                         static_cast<uint16_t>(std::min(static_cast<uint32_t>(recorder->mClipInfo.mInitialDuration +
+                                                                              recorder->mClipInfo.mAugmentationDuration),
+                                                        static_cast<uint32_t>(recorder->mClipInfo.mMaxClipDuration))));
+            recorder->mClipInfo.mInitialDuration = static_cast<uint16_t>(
+                std::min(static_cast<uint32_t>(recorder->mClipInfo.mInitialDuration + recorder->mClipInfo.mAugmentationDuration),
+                         static_cast<uint32_t>(recorder->mClipInfo.mMaxClipDuration)));
+            hasAugmented = true;
+        }
+        else
+        {
+            if (elapsed >= recorder->mClipInfo.mInitialDuration)
+            {
+                ChipLogError(Camera, "PushAVTransport starting blind period");
+                blindStartTime = std::chrono::steady_clock::now();
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 void PushAVTransport::TriggerTransport(TriggerActivationReasonEnum activationReason)
 {
-    ChipLogProgress(Camera, "PushAVTransport trigger transport, reason: [%u]", (uint16_t) activationReason);
-    if (activationReason == TriggerActivationReasonEnum::kUserInitiated)
-    {
-        ChipLogProgress(Camera, "PushAVTransport trigger transport with activation reason [%u], connectionID: [%u]",
-                        (unsigned int) activationReason, mConnectionID);
-        StartTransport();
-    }
-}
+    ChipLogProgress(Camera, "PushAVTransport trigger transport, activation reason: [%u]", (uint16_t) activationReason);
 
-void PushAVTransport::StartTransport()
-{
-    if (mTransportStatus == TransportStatusEnum::kActive)
+    // TODO initialize recorder, check for running, do timecontrol
+    if (mTransportTriggerType == TransportTriggerTypeEnum::kCommand || mTransportTriggerType == TransportTriggerTypeEnum::kMotion)
     {
-        initializeRecorder();
-        mCanSendVideo = true;
-        mCanSendAudio = true;
+        if (HandleTriggerDetected())
+        {
+            ChipLogError(Camera, "PushAVTransport command/motion transport trigger received. Clip duration [%d seconds]",
+                         recorder->mClipInfo.mInitialDuration);
+        }
+        else
+        {
+            ChipLogError(Camera,
+                         "PushAVTransport command/motion transport trigger received but ignored due to blind periodClip duration. "
+                         "Clip duration [%d seconds]",
+                         recorder->mClipInfo.mInitialDuration);
+        }
+    }
+
+    if (mTransportTriggerType == TransportTriggerTypeEnum::kContinuous)
+    {
+        ChipLogProgress(Camera, "PushAVTransport continuous transport trigger received. No action needed");
+        return;
     }
 }
 
@@ -78,50 +150,78 @@ void PushAVTransport::setTransportStatus(TransportStatusEnum status)
     }
 
     mTransportStatus = status;
+    if (status == TransportStatusEnum::kActive)
+    {
+        mCanSendVideo = true;
+        mCanSendAudio = true;
+        uploader      = std::make_unique<PushAVUploader>();
+        uploader->Start();
+        InitializeRecorder();
+        isUploaderInitialized = true;
+        if (mTransportTriggerType == TransportTriggerTypeEnum::kContinuous)
+        {
+            recorder->Start();
+        }
+    }
     if (status == TransportStatusEnum::kInactive)
     {
         mCanSendVideo = false;
         mCanSendAudio = false;
         recorder->Stop();
         // TODO cleanup the existing recorded files here.
+        // TODO deinitialize uploader
         isRecorderInitialized = false;
+        isUploaderInitialized = false;
     }
 }
 
 // Implementation of SendVideo method
 void PushAVTransport::SendVideo(const char * data, size_t size, uint16_t videoStreamID)
 {
-    if (!isRecorderInitialized)
+    if (!recorder)
     {
-        initializeRecorder();
+        ChipLogError(Camera, "Recorder is null in SendVideo");
+        return;
     }
-    if (recorder->mRunning==false){
-        recorder->Start();
+    if (recorder->mDeInitializeRecorder.load())
+    {
+
+        isRecorderInitialized = false;
+        recorder.reset();
+        InitializeRecorder();
+        return;
     }
-    if(CanSendVideo())
-        recorder->PushPacket(data,size, videoStreamID, 1);
+
+    if (CanSendVideo())
+    {
+        // ChipLogProgress(Camera, "MAGAGER:Sending Video Data");
+        recorder->PushPacket(data, size, 1);
+    }
 }
 
 // Implementation of SendAudio method
 void PushAVTransport::SendAudio(const char * data, size_t size, uint16_t audioStreamID)
 {
-    if (!isRecorderInitialized)
+    if (!recorder)
     {
-        initializeRecorder();
+        ChipLogError(Camera, "Recorder is null in SendAudio");
+        return;
     }
-    if (recorder->mRunning==false){
-        recorder->Start();
+    if (recorder->mDeInitializeRecorder.load())
+    {
+        isRecorderInitialized = false;
+        recorder.reset();
+        InitializeRecorder();
+        return;
     }
-    if(CanSendAudio())
-        recorder->PushPacket(data,size, audioStreamID, 0);
+
+    if (CanSendAudio())
+    {
+        recorder->PushPacket(data, size, 0);
+    }
 }
 
-// Implementation of SendAudioVideo method
-void PushAVTransport::SendAudioVideo(const char * data, size_t size, uint16_t videoStreamID, uint16_t audioStreamID)
-{
-    //check if required or remove this method
-}
-
+void PushAVTransport::SendAudioVideo(const char * data, size_t size, uint16_t videoStreamID, uint16_t audioStreamID) {}
 
 // Utility API for Test purpose
 void PushAVTransport::readFromFile(char * filename, uint8_t ** videoBuffer, size_t * videoBufferBytes)
