@@ -22,6 +22,9 @@ extern "C" {
 #include <libavutil/avutil.h>
 }
 
+#define IS_H264_FRAME_NALU_HEAD(frame)                                                                                             \
+    (((frame)[0] == 0x00) && ((frame)[1] == 0x00) && (((frame)[2] == 0x01) || (((frame)[2] == 0x00) && ((frame)[3] == 0x01))))
+
 PushAVTransport::PushAVTransport(uint16_t connectionID, const char * url, TransportTriggerTypeEnum transportTriggerType)
 {
     mConnectionID         = connectionID;
@@ -53,7 +56,87 @@ PushAVTransport::~PushAVTransport()
     isRecorderInitialized = false;
 }
 
-bool PushAVTransport::InBlindPeriod()
+bool IsH264IFrame(const uint8_t * data, unsigned int length)
+{
+    unsigned int idx = 0;
+    int frameType    = 0;
+    int foundSps     = 0;
+    int foundPps     = 0;
+    int foundIdr     = 0;
+    bool ret         = false;
+
+    if (data == nullptr || (length < 5))
+    {
+        return ret;
+    }
+
+    do
+    {
+        if (IS_H264_FRAME_NALU_HEAD(data + idx))
+        {
+            if (data[idx + 2] == 0x01)
+                frameType = data[idx + 3] & 0x1f;
+            else if ((data[idx + 2] == 0x00) && (data[idx + 3] == 0x01))
+                frameType = data[idx + 4] & 0x1f;
+
+            if (frameType == 7)
+            {
+                foundSps = 1;
+            }
+            else if (frameType == 8)
+            {
+                foundPps = 1;
+            }
+            else if (frameType == 5)
+            {
+                foundIdr = 1;
+                break;
+            }
+            if ((data[idx + 2] == 0x00) && (data[idx + 3] == 0x01))
+                idx++;
+
+            idx += 4;
+        }
+        else
+        {
+            idx++;
+        }
+    } while (idx < (length - 4));
+
+    if (foundSps == 1 && foundPps == 1 && foundIdr == 1)
+    {
+        ret = true;
+    }
+
+    return ret;
+}
+
+AVPacket * CreatePacket(const uint8_t * data, int size, bool isVideo)
+{
+    AVPacket * packet = av_packet_alloc();
+    if (!packet)
+    {
+        ChipLogError(Camera, "ERROR: AVPacket memory allocation failed!");
+        return nullptr;
+    }
+    packet->data = (uint8_t *) av_malloc(size);
+    if (!packet->data)
+    {
+        ChipLogError(Camera, "ERROR: AVPacket data allocation failed!");
+        av_packet_free(&packet);
+        return nullptr;
+    }
+    memcpy(packet->data, data, size);
+    packet->size = size;
+    if (isVideo && IsH264IFrame(data, size))
+    {
+        packet->flags = AV_PKT_FLAG_KEY;
+    }
+
+    return packet;
+}
+
+bool InBlindPeriod(std::chrono::steady_clock::time_point blindStartTime, uint16_t blindDuration)
 {
     if (blindStartTime == std::chrono::steady_clock::time_point())
     {
@@ -64,7 +147,7 @@ bool PushAVTransport::InBlindPeriod()
         auto now     = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - blindStartTime).count();
         ChipLogProgress(Camera, "PushAVTransport blind period elapsed: %ld", elapsed);
-        return (elapsed < recorder->mClipInfo.mBlindDuration);
+        return (elapsed < blindDuration);
     }
 }
 
@@ -73,7 +156,7 @@ bool PushAVTransport::HandleTriggerDetected()
     auto now     = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - recorder->mClipInfo.activationTime).count();
     ChipLogError(Camera, "PushAVTransport HandleTriggerDetected elapsed: %ld", elapsed);
-    if (InBlindPeriod())
+    if (InBlindPeriod(blindStartTime, recorder->mClipInfo.mBlindDuration))
     {
         return false;
     }
@@ -81,7 +164,6 @@ bool PushAVTransport::HandleTriggerDetected()
     if (!recorder->mRunning)
     {
         // Start new recording
-        // recorder->mClipInfo.activationTime = std::chrono::steady_clock::now();
         hasAugmented = false;
         recorder->Start();
     }
@@ -161,23 +243,51 @@ void PushAVTransport::setTransportStatus(TransportStatusEnum status)
         if (mTransportTriggerType == TransportTriggerTypeEnum::kContinuous)
         {
             recorder->Start();
+            return;
+        }
+        if (!prerollBuffer && clipInfo.mPreRollLength > 0)
+        {
+            prerollBuffer = new PushAvPreRollBuffer(clipInfo.mPreRollLength);
+        }
+        if (status == TransportStatusEnum::kInactive)
+        {
+            mCanSendVideo = false;
+            mCanSendAudio = false;
+            recorder->Stop();
+            // TODO cleanup the existing recorded files here.
+            // TODO deinitialize uploader
+            isRecorderInitialized = false;
+            isUploaderInitialized = false;
+            if (prerollBuffer)
+            {
+                prerollBuffer->~PushAvPreRollBuffer();
+                delete prerollBuffer;
+            }
         }
     }
-    if (status == TransportStatusEnum::kInactive)
+}
+
+void PushAVTransport::SendPacketsToRecorder()
+{
+    std::pair<AVPacket *, bool> packet = prerollBuffer->FetchPacket();
+    while (packet.first != nullptr)
     {
-        mCanSendVideo = false;
-        mCanSendAudio = false;
-        recorder->Stop();
-        // TODO cleanup the existing recorded files here.
-        // TODO deinitialize uploader
-        isRecorderInitialized = false;
-        isUploaderInitialized = false;
+        recorder->PushPacket(packet.first, packet.second);
     }
 }
 
 // Implementation of SendVideo method
 void PushAVTransport::SendVideo(const char * data, size_t size, uint16_t videoStreamID)
 {
+    if (!CanSendVideo())
+    {
+        return;
+    }
+    AVPacket * packet = CreatePacket((const uint8_t *) data, size, true);
+    if (prerollBuffer)
+    {
+        prerollBuffer->AddPacket(packet, 1);
+    }
     if (!recorder)
     {
         ChipLogError(Camera, "Recorder is null in SendVideo");
@@ -191,17 +301,21 @@ void PushAVTransport::SendVideo(const char * data, size_t size, uint16_t videoSt
         InitializeRecorder();
         return;
     }
-
-    if (CanSendVideo())
-    {
-        // ChipLogProgress(Camera, "MAGAGER:Sending Video Data");
-        recorder->PushPacket(data, size, 1);
-    }
+    SendPacketsToRecorder();
 }
 
 // Implementation of SendAudio method
 void PushAVTransport::SendAudio(const char * data, size_t size, uint16_t audioStreamID)
 {
+    if (!CanSendAudio())
+    {
+        return;
+    }
+    AVPacket * packet = CreatePacket((const uint8_t *) data, size, false);
+    if (prerollBuffer)
+    {
+        prerollBuffer->AddPacket(packet, 0);
+    }
     if (!recorder)
     {
         ChipLogError(Camera, "Recorder is null in SendAudio");
@@ -215,10 +329,7 @@ void PushAVTransport::SendAudio(const char * data, size_t size, uint16_t audioSt
         return;
     }
 
-    if (CanSendAudio())
-    {
-        recorder->PushPacket(data, size, 0);
-    }
+    SendPacketsToRecorder();
 }
 
 void PushAVTransport::SendAudioVideo(const char * data, size_t size, uint16_t videoStreamID, uint16_t audioStreamID) {}

@@ -19,6 +19,7 @@
 #pragma once
 
 #include "pushav-clip-recorder.h"
+#include "pushav-prerollbuffer.h"
 #include "pushav-uploader.h"
 #include "transport.h"
 #include <app-common/zap-generated/attributes/Accessors.h>
@@ -70,13 +71,11 @@ public:
     // Get Transport status
     TransportStatusEnum getTransportStatus() { return mTransportStatus; }
 
-    bool InBlindPeriod();
-
     bool HandleTriggerDetected();
 
     void StartTransport();
     void InitializeRecorder();
-
+    void SendPacketsToRecorder();
     void readFromFile(char * filename, uint8_t ** videoBuffer, size_t * videoBufferBytes);
     std::mutex mtx;
     bool isRecorderInitialized = false;
@@ -98,6 +97,9 @@ private:
     bool mCanSendAudio = false;
 
     unsigned int mClipId = 0;
+
+    PushAvPreRollBuffer * prerollBuffer;
+
     // Enum indicating the type of trigger used to start the transport
     TransportTriggerTypeEnum mTransportTriggerType;
     TransportStatusEnum mTransportStatus;

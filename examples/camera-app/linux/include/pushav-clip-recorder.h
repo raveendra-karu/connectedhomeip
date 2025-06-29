@@ -78,6 +78,7 @@ public:
         std::string mUrl;                                     ///< URL for uploading clips;
         int mTriggerType;                                     ///< Recording trigger type
         std::chrono::steady_clock::time_point activationTime; ///< Time when the recording started
+        int mPreRollLength;                                   ///< Pre-roll length in seconds
     };
 
     /**
@@ -135,7 +136,7 @@ public:
      * @param size Data size in bytes
      * @param isVideo True for video data, false for audio
      */
-    void PushPacket(const char * data, size_t size, bool isVideo);
+    void PushPacket(AVPacket * packet, bool isVideo);
 
     std::atomic<bool> mRunning{ false };              ///< Recording activity flag
     std::atomic<bool> mDeInitializeRecorder{ false }; ///< Deinitialization flag
@@ -178,7 +179,7 @@ private:
     bool FileExists(const std::string & path);
     bool CheckAndUploadFile(std::string path);
     bool IsH264IFrame(const uint8_t * data, unsigned int length);
-    AVPacket * CreatePacket(const uint8_t * data, int size, bool isVideo);
+    AVPacket * UpdateAVPacket(AVPacket * packet, bool isVideo);
 
     /**
      * @brief Processes queued packets and writes them to the output file.

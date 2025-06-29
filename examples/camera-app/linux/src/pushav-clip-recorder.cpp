@@ -145,63 +145,6 @@ bool PushAVClipRecorder::IsH264IFrame(const uint8_t * data, unsigned int length)
     return ret;
 }
 
-AVPacket * PushAVClipRecorder::CreatePacket(const uint8_t * data, int size, bool isVideo)
-{
-    AVPacket * packet = av_packet_alloc();
-    if (!packet)
-    {
-        ChipLogError(Camera, "ERROR: AVPacket allocation failed!");
-        return nullptr;
-    }
-    packet->data = (uint8_t *) av_malloc(size);
-    if (!packet->data)
-    {
-        ChipLogError(Camera, "ERROR: AVPacket data allocation failed!");
-        av_packet_free(&packet);
-        return nullptr;
-    }
-    memcpy(packet->data, data, size);
-    packet->size = size;
-    if (isVideo)
-    {
-        if (IsH264IFrame(data, size))
-        {
-
-            mFoundFirstIFramePts = mVideoInfo.mVideoPts;
-            packet->flags        = AV_PKT_FLAG_KEY;
-            ChipLogProgress(Camera, "Found I-frame at PTS: %ld", mVideoInfo.mVideoPts);
-        }
-        if (mFoundFirstIFramePts < 0)
-        {
-            ChipLogError(Camera, "ERROR: First frame is not an I-frame. Dropping packet.");
-            av_packet_free(&packet);
-            return nullptr;
-        }
-        packet->pts          = mVideoInfo.mVideoPts;
-        packet->dts          = mVideoInfo.mVideoDts;
-        packet->stream_index = mVideoInfo.mVideoStreamIndex;
-        packet->duration     = mVideoInfo.mVideoFrameDuration;
-        mVideoInfo.mVideoDts += mVideoInfo.mVideoFrameDuration;
-        mVideoInfo.mVideoPts += mVideoInfo.mVideoFrameDuration;
-    }
-    else
-    {
-        if (mFoundFirstIFramePts < 0 && mFoundFirstIFramePts <= mAudioInfo.mAudioPts)
-        {
-            ChipLogError(Camera, "ERROR: frames will be dropped till an Iframe is recived \n");
-            av_packet_free(&packet);
-            return nullptr;
-        }
-        packet->pts          = mAudioInfo.mAudioPts;
-        packet->dts          = mAudioInfo.mAudioDts;
-        packet->stream_index = mAudioInfo.mAudioStreamIndex;
-        packet->duration     = mAudioInfo.mAudioFrameDuration;
-        mAudioInfo.mAudioDts += mAudioInfo.mAudioFrameDuration;
-        mAudioInfo.mAudioPts += mAudioInfo.mAudioFrameDuration;
-    }
-    return (mFoundFirstIFramePts < 0) ? nullptr : packet;
-}
-
 void PushAVClipRecorder::Start()
 {
     if (mRunning.exchange(true))
@@ -239,7 +182,48 @@ void PushAVClipRecorder::Stop()
     ChipLogProgress(Camera, "Recording stopped for ID: %s", mClipInfo.mRecorderId.c_str());
 }
 
-void PushAVClipRecorder::PushPacket(const char * data, size_t size, bool isVideo)
+AVPacket * PushAVClipRecorder::UpdateAVPacket(AVPacket * packet, bool isVideo)
+{
+    if (isVideo)
+    {
+        if (packet->flags | AV_PKT_FLAG_KEY)
+        {
+
+            mFoundFirstIFramePts = mVideoInfo.mVideoPts;
+            ChipLogProgress(Camera, "Found I-frame at PTS: %ld", mVideoInfo.mVideoPts);
+        }
+        if (mFoundFirstIFramePts < 0)
+        {
+            ChipLogError(Camera, "ERROR: First frame is not an I-frame. Dropping packet.");
+            av_packet_free(&packet);
+            return nullptr;
+        }
+        packet->pts          = mVideoInfo.mVideoPts;
+        packet->dts          = mVideoInfo.mVideoDts;
+        packet->stream_index = mVideoInfo.mVideoStreamIndex;
+        packet->duration     = mVideoInfo.mVideoFrameDuration;
+        mVideoInfo.mVideoDts += mVideoInfo.mVideoFrameDuration;
+        mVideoInfo.mVideoPts += mVideoInfo.mVideoFrameDuration;
+    }
+    else
+    {
+        if (mFoundFirstIFramePts < 0 && mFoundFirstIFramePts <= mAudioInfo.mAudioPts)
+        {
+            ChipLogError(Camera, "ERROR: frames will be dropped till an Iframe is recived \n");
+            av_packet_free(&packet);
+            return nullptr;
+        }
+        packet->pts          = mAudioInfo.mAudioPts;
+        packet->dts          = mAudioInfo.mAudioDts;
+        packet->stream_index = mAudioInfo.mAudioStreamIndex;
+        packet->duration     = mAudioInfo.mAudioFrameDuration;
+        mAudioInfo.mAudioDts += mAudioInfo.mAudioFrameDuration;
+        mAudioInfo.mAudioPts += mAudioInfo.mAudioFrameDuration;
+    }
+    return (mFoundFirstIFramePts < 0) ? nullptr : packet;
+}
+
+void PushAVClipRecorder::PushPacket(AVPacket * packet, bool isVideo)
 {
     if (!mRunning)
     {
@@ -247,7 +231,7 @@ void PushAVClipRecorder::PushPacket(const char * data, size_t size, bool isVideo
         return;
     }
 
-    AVPacket * packet = CreatePacket((const uint8_t *) data, (int) size, isVideo);
+    UpdateAVPacket(packet, isVideo);
     if (!packet)
     {
         ChipLogError(Camera, "ERROR: PACKET DROPPED!");
@@ -258,9 +242,10 @@ void PushAVClipRecorder::PushPacket(const char * data, size_t size, bool isVideo
     std::queue<AVPacket *> & queue = isVideo ? mVideoQueue : mAudioQueue;
     if (queue.size() >= kMaxQueueSize)
     {
-        ChipLogProgress(Camera, "Queue full. Dropping packet");
-        av_packet_free(&packet);
-        return;
+        AVPacket * oldPacket = queue.front();
+        queue.pop();
+        av_packet_free(&oldPacket);
+        ChipLogProgress(Camera, "Queue full. Dropping old packet");
     }
     queue.push(packet);
     mCondition.notify_one();
