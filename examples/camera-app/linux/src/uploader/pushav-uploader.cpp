@@ -70,6 +70,12 @@ void PushAVUploader::Stop()
         {
             mUploaderThread.join();
         }
+        std::lock_guard<std::mutex> lock(mQueueMutex);
+        if (!mAvData.empty())
+        {
+            ChipLogError(Camera, "Discarding %lu unprocessed upload jobs", mAvData.size());
+        }
+        mAvData = std::queue<std::pair<std::string, std::string>>();
     }
 }
 

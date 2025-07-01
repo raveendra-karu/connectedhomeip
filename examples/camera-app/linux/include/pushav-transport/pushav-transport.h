@@ -78,9 +78,8 @@ public:
     void SendPacketsToRecorder();
     void readFromFile(char * filename, uint8_t ** videoBuffer, size_t * videoBufferBytes);
     std::mutex mtx;
-    bool isRecorderInitialized = false;
-    bool isUploaderInitialized = false;
-    bool hasAugmented          = false;
+    bool hasAugmented = false;
+    bool mStreaming   = false;
     std::chrono::steady_clock::time_point blindStartTime;
     int vid                                      = 1;
     std::unique_ptr<PushAVClipRecorder> recorder = nullptr;

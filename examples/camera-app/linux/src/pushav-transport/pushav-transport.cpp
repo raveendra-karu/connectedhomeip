@@ -35,10 +35,9 @@ PushAVTransport::PushAVTransport(uint16_t connectionID, const char * url, Transp
 
 void PushAVTransport::InitializeRecorder()
 {
-    if (!isRecorderInitialized)
+    if (recorder)
     {
-        recorder              = std::make_unique<PushAVClipRecorder>(clipInfo, audioInfo, videoInfo, uploader.get());
-        isRecorderInitialized = true;
+        recorder = std::make_unique<PushAVClipRecorder>(clipInfo, audioInfo, videoInfo, uploader.get());
     }
     else
     {
@@ -52,10 +51,14 @@ PushAVTransport::~PushAVTransport()
     // TODO cleanup the existing recorded files here.
     mCanSendVideo = false;
     mCanSendAudio = false;
-    recorder->Stop();
-    isRecorderInitialized = false;
+    recorder.reset();
+    uploader.reset();
+    if (prerollBuffer)
+    {
+        prerollBuffer->~PushAvPreRollBuffer();
+        delete prerollBuffer;
+    }
 }
-
 bool IsH264IFrame(const uint8_t * data, unsigned int length)
 {
     unsigned int idx = 0;
@@ -147,25 +150,30 @@ bool InBlindPeriod(std::chrono::steady_clock::time_point blindStartTime, uint16_
         auto now     = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - blindStartTime).count();
         ChipLogProgress(Camera, "PushAVTransport blind period elapsed: %ld", elapsed);
-        return (elapsed < blindDuration);
+        return ((elapsed >= 0) && (elapsed < blindDuration));
     }
 }
 
 bool PushAVTransport::HandleTriggerDetected()
 {
-    auto now     = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - recorder->mClipInfo.activationTime).count();
-    ChipLogError(Camera, "PushAVTransport HandleTriggerDetected elapsed: %ld", elapsed);
+    int64_t elapsed;
+    auto now = std::chrono::steady_clock::now();
+
     if (InBlindPeriod(blindStartTime, recorder->mClipInfo.mBlindDuration))
     {
         return false;
     }
 
+    elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - recorder->mClipInfo.activationTime).count();
+    ChipLogError(Camera, "PushAVTransport HandleTriggerDetected elapsed: %ld", elapsed);
+
     if (!recorder->mRunning)
     {
         // Start new recording
-        hasAugmented = false;
+        hasAugmented                       = false;
+        recorder->mClipInfo.activationTime = std::chrono::steady_clock::now();
         recorder->Start();
+        mStreaming = true;
     }
     else
     {
@@ -182,17 +190,10 @@ bool PushAVTransport::HandleTriggerDetected()
                 std::min(static_cast<uint32_t>(recorder->mClipInfo.mInitialDuration + recorder->mClipInfo.mAugmentationDuration),
                          static_cast<uint32_t>(recorder->mClipInfo.mMaxClipDuration)));
             hasAugmented = true;
-        }
-        else
-        {
-            if (elapsed >= recorder->mClipInfo.mInitialDuration)
-            {
-                ChipLogError(Camera, "PushAVTransport starting blind period");
-                blindStartTime = std::chrono::steady_clock::now();
-                return false;
-            }
+            mStreaming   = true;
         }
     }
+    blindStartTime = recorder->mClipInfo.activationTime + std::chrono::seconds(recorder->mClipInfo.mInitialDuration);
     return true;
 }
 
@@ -200,7 +201,6 @@ void PushAVTransport::TriggerTransport(TriggerActivationReasonEnum activationRea
 {
     ChipLogProgress(Camera, "PushAVTransport trigger transport, activation reason: [%u]", (uint16_t) activationReason);
 
-    // TODO initialize recorder, check for running, do timecontrol
     if (mTransportTriggerType == TransportTriggerTypeEnum::kCommand || mTransportTriggerType == TransportTriggerTypeEnum::kMotion)
     {
         if (HandleTriggerDetected())
@@ -228,6 +228,7 @@ void PushAVTransport::setTransportStatus(TransportStatusEnum status)
 {
     if (mTransportStatus == status)
     {
+        ChipLogProgress(Camera, "PushAVTransport transport status unchanged");
         return;
     }
 
@@ -239,7 +240,6 @@ void PushAVTransport::setTransportStatus(TransportStatusEnum status)
         uploader      = std::make_unique<PushAVUploader>();
         uploader->Start();
         InitializeRecorder();
-        isUploaderInitialized = true;
         if (mTransportTriggerType == TransportTriggerTypeEnum::kContinuous)
         {
             recorder->Start();
@@ -253,11 +253,8 @@ void PushAVTransport::setTransportStatus(TransportStatusEnum status)
         {
             mCanSendVideo = false;
             mCanSendAudio = false;
-            recorder->Stop();
-            // TODO cleanup the existing recorded files here.
-            // TODO deinitialize uploader
-            isRecorderInitialized = false;
-            isUploaderInitialized = false;
+            recorder.reset();
+            uploader.reset();
             if (prerollBuffer)
             {
                 prerollBuffer->~PushAvPreRollBuffer();
@@ -267,11 +264,27 @@ void PushAVTransport::setTransportStatus(TransportStatusEnum status)
     }
 }
 
+bool PushAVTransport::IsStreaming()
+{
+    return mStreaming && (mTransportStatus == TransportStatusEnum::kActive);
+}
+
 void PushAVTransport::SendPacketsToRecorder()
 {
+    if (!IsStreaming())
+    {
+        return;
+    }
     std::pair<AVPacket *, bool> packet = prerollBuffer->FetchPacket();
     while (packet.first != nullptr)
     {
+        if (recorder->mDeInitializeRecorder.load())
+        {
+            recorder.reset();
+            InitializeRecorder();
+            mStreaming = false;
+            return;
+        }
         recorder->PushPacket(packet.first, packet.second);
     }
 }
@@ -288,19 +301,6 @@ void PushAVTransport::SendVideo(const char * data, size_t size, uint16_t videoSt
     {
         prerollBuffer->AddPacket(packet, 1);
     }
-    if (!recorder)
-    {
-        ChipLogError(Camera, "Recorder is null in SendVideo");
-        return;
-    }
-    if (recorder->mDeInitializeRecorder.load())
-    {
-
-        isRecorderInitialized = false;
-        recorder.reset();
-        InitializeRecorder();
-        return;
-    }
     SendPacketsToRecorder();
 }
 
@@ -316,19 +316,6 @@ void PushAVTransport::SendAudio(const char * data, size_t size, uint16_t audioSt
     {
         prerollBuffer->AddPacket(packet, 0);
     }
-    if (!recorder)
-    {
-        ChipLogError(Camera, "Recorder is null in SendAudio");
-        return;
-    }
-    if (recorder->mDeInitializeRecorder.load())
-    {
-        isRecorderInitialized = false;
-        recorder.reset();
-        InitializeRecorder();
-        return;
-    }
-
     SendPacketsToRecorder();
 }
 
