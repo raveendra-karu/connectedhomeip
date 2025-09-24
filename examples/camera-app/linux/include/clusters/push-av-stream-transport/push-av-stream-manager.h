@@ -78,9 +78,10 @@ public:
 
     bool ValidateUrl(const std::string & url) override;
 
-    bool ValidateStreamUsage(StreamUsageEnum streamUsage) override;
+    bool ValidateStreamUsage(StreamUsageEnum streamUsage, const Optional<DataModel::Nullable<uint16_t>> & videoStreamId,
+                             const Optional<DataModel::Nullable<uint16_t>> & audioStreamId) override;
 
-    bool ValidateSegmentDuration(uint16_t segmentDuration) override;
+    bool ValidateSegmentDuration(uint16_t segmentDuration, const Optional<DataModel::Nullable<uint16_t>> & videoStreamId) override;
 
     Protocols::InteractionModel::Status
     ValidateBandwidthLimit(StreamUsageEnum streamUsage, const Optional<DataModel::Nullable<uint16_t>> & videoStreamId,

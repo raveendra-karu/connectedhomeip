@@ -100,12 +100,15 @@ Protocols::InteractionModel::Status PushAvStreamTransportManager::ManuallyTrigge
     return Status::Success;
 }
 
-bool PushAvStreamTransportManager::ValidateStreamUsage(StreamUsageEnum streamUsage)
+bool PushAvStreamTransportManager::ValidateStreamUsage(StreamUsageEnum streamUsage,
+                                                       const Optional<DataModel::Nullable<uint16_t>> & videoStreamId,
+                                                       const Optional<DataModel::Nullable<uint16_t>> & audioStreamId)
 {
     return true;
 }
 
-bool PushAvStreamTransportManager::ValidateSegmentDuration(uint16_t segmentDuration)
+bool PushAvStreamTransportManager::ValidateSegmentDuration(uint16_t segmentDuration,
+                                                           const Optional<DataModel::Nullable<uint16_t>> & videoStreamId)
 {
     return true;
 }

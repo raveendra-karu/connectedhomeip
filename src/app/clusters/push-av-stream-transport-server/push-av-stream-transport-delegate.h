@@ -141,17 +141,24 @@ public:
      * @brief Validates the provided StreamUsage.
      *
      * @param streamUsage The StreamUsage to validate
-     * @return true if StreamUsage is present in the StreamUsagePriorities list, false otherwise
+     * @param videoStreamId Optional identifier for the requested video stream
+     * @param audioStreamId Optional identifier for the requested audio stream
+     * @return true if StreamUsage is present in the
+     * StreamUsagePriorities list, false otherwise
      */
-    virtual bool ValidateStreamUsage(PushAvStreamTransport::StreamUsageEnum streamUsage) = 0;
+    virtual bool ValidateStreamUsage(PushAvStreamTransport::StreamUsageEnum streamUsage,
+                                     const Optional<DataModel::Nullable<uint16_t>> & videoStreamId,
+                                     const Optional<DataModel::Nullable<uint16_t>> & audioStreamId) = 0;
 
     /**
      * @brief Validates the provided Segment Duration.
      *
      * @param segmentDuration The Segment Duration to validate
+     * @param videoStreamId Optional identifier for the requested video stream
      * @return true if Segment Duration is multiple of KeyFrameInterval, false otherwise
      */
-    virtual bool ValidateSegmentDuration(uint16_t segmentDuration) = 0;
+    virtual bool ValidateSegmentDuration(uint16_t segmentDuration,
+                                         const Optional<DataModel::Nullable<uint16_t>> & videoStreamId) = 0;
 
     /**
      * @brief Validates bandwidth requirements against camera's resource management.

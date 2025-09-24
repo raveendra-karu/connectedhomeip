@@ -18,6 +18,7 @@
 
 #include "push-av-stream-manager.h"
 
+#include <algorithm>
 #include <app-common/zap-generated/attributes/Accessors.h>
 #include <app-common/zap-generated/ids/Attributes.h>
 #include <app-common/zap-generated/ids/Clusters.h>
@@ -310,16 +311,116 @@ PushAvStreamTransportManager::ValidateBandwidthLimit(StreamUsageEnum streamUsage
     return Status::Success;
 }
 
-bool PushAvStreamTransportManager::ValidateStreamUsage(StreamUsageEnum streamUsage)
+bool PushAvStreamTransportManager::ValidateStreamUsage(StreamUsageEnum streamUsage,
+                                                       const Optional<DataModel::Nullable<uint16_t>> & videoStreamId,
+                                                       const Optional<DataModel::Nullable<uint16_t>> & audioStreamId)
 {
-    // TODO: if StreamUsage is present in the StreamUsagePriorities list, return true, false otherwise
+    if (mCameraDevice == nullptr)
+    {
+        ChipLogError(Camera, "CameraDeviceInterface not initialized for ValidateStreamUsage");
+        return false;
+    }
+
+    auto & avsmController                                     = mCameraDevice->GetCameraAVStreamMgmtController();
+    Optional<DataModel::Nullable<uint16_t>> videoStreamIdCopy = videoStreamId;
+    Optional<DataModel::Nullable<uint16_t>> audioStreamIdCopy = audioStreamId;
+
+    CHIP_ERROR err = avsmController.ValidateStreamUsage(streamUsage, videoStreamIdCopy, audioStreamIdCopy);
+    if (err != CHIP_NO_ERROR)
+    {
+        ChipLogError(Camera, "ValidateStreamUsage failed for streamUsage %u: %" CHIP_ERROR_FORMAT,
+                     static_cast<uint16_t>(streamUsage), err.Format());
+        return false;
+    }
+
+    ChipLogProgress(Camera, "ValidateStreamUsage succeeded for streamUsage %u", static_cast<uint16_t>(streamUsage));
     return true;
 }
 
-bool PushAvStreamTransportManager::ValidateSegmentDuration(uint16_t segmentDuration)
+bool PushAvStreamTransportManager::ValidateSegmentDuration(uint16_t segmentDuration,
+                                                           const Optional<DataModel::Nullable<uint16_t>> & videoStreamId)
 {
-    // TODO: if Segment Duration is multiple of KeyFrameInterval, return true, false otherwise
-    return true;
+    if (mCameraDevice == nullptr)
+    {
+        ChipLogError(Camera, "CameraDeviceInterface not initialized for ValidateSegmentDuration");
+        return false;
+    }
+
+    if (!videoStreamId.HasValue() || videoStreamId.Value().IsNull())
+    {
+        ChipLogError(Camera, "ValidateSegmentDuration failed: VideoStreamID not provided or is null");
+        return false;
+    }
+
+    uint16_t targetVideoStreamId = videoStreamId.Value().Value();
+
+    if (segmentDuration < 500 || segmentDuration > 65500)
+    {
+        ChipLogError(Camera, "ValidateSegmentDuration failed: Segment duration %ums must be between 500ms and 65500ms",
+                     segmentDuration);
+        return false;
+    }
+
+    auto & avsmController = mCameraDevice->GetCameraAVStreamMgmtController();
+
+    CHIP_ERROR err = avsmController.ValidateVideoStreamID(targetVideoStreamId);
+    if (err != CHIP_NO_ERROR)
+    {
+        ChipLogError(Camera, "ValidateSegmentDuration failed: Invalid VideoStreamID %u: %" CHIP_ERROR_FORMAT, targetVideoStreamId,
+                     err.Format());
+        return false;
+    }
+
+    auto & allocatedVideoStreams = mCameraDevice->GetCameraHALInterface().GetAvailableVideoStreams();
+
+    if (allocatedVideoStreams.empty())
+    {
+        ChipLogError(Camera, "ValidateSegmentDuration failed: No video streams available for validation");
+        return false;
+    }
+
+    {
+        const VideoStreamStruct & videoStreamParams = stream.videoStreamParams;
+
+        if (targetVideoStreamId == videoStreamParams.videoStreamID)
+        {
+            uint16_t keyFrameInterval = videoStreamParams.keyFrameInterval;
+
+            if (keyFrameInterval == 0)
+            {
+                ChipLogError(Camera, "ValidateSegmentDuration failed: Key frame interval is 0 for video stream %u",
+                             targetVideoStreamId);
+                return false;
+            }
+
+            if (segmentDuration % keyFrameInterval != 0)
+            {
+                ChipLogError(Camera,
+                             "ValidateSegmentDuration failed: Segment duration %ums is not a multiple of key frame interval %ums "
+                             "for video stream %u",
+                             segmentDuration, keyFrameInterval, targetVideoStreamId);
+                return false;
+            }
+
+            if (segmentDuration < keyFrameInterval)
+            {
+                ChipLogError(
+                    Camera,
+                    "ValidateSegmentDuration failed: Segment duration %ums must be >= key frame interval %ums for video stream %u",
+                    segmentDuration, keyFrameInterval, targetVideoStreamId);
+                return false;
+            }
+
+            ChipLogProgress(Camera,
+                            "ValidateSegmentDuration succeeded: %ums validated for video stream %u (key frame interval: %ums)",
+                            segmentDuration, targetVideoStreamId, keyFrameInterval);
+            return true;
+        }
+    }
+
+    ChipLogError(Camera, "ValidateSegmentDuration failed: VideoStreamID %u not found in allocated video streams",
+                 targetVideoStreamId);
+    return false;
 }
 
 bool PushAvStreamTransportManager::ValidateUrl(const std::string & url)
@@ -329,6 +430,27 @@ bool PushAvStreamTransportManager::ValidateUrl(const std::string & url)
     // Check minimum length and https prefix
     if (url.size() <= https.size() || url.substr(0, https.size()) != https)
     {
+        return false;
+    }
+
+    // Check that URL does not contain fragment character '#'
+    if (url.find('#') != std::string::npos)
+    {
+        ChipLogError(Camera, "URL contains fragment character '#'");
+        return false;
+    }
+
+    // Check that URL does not contain query character '?'
+    if (url.find('?') != std::string::npos)
+    {
+        ChipLogError(Camera, "URL contains query character '?'");
+        return false;
+    }
+
+    // Check that URL ends with a forward slash '/'
+    if (url.back() != '/')
+    {
+        ChipLogError(Camera, "URL does not end with '/'");
         return false;
     }
 
@@ -481,27 +603,6 @@ PushAvStreamTransportStatusEnum PushAvStreamTransportManager::GetTransportBusySt
     }
 }
 
-// Below API may not be needed
-void PushAvStreamTransportManager::OnAttributeChanged(AttributeId attributeId)
-{
-    ChipLogProgress(Zcl, "Attribute changed for AttributeId = " ChipLogFormatMEI, ChipLogValueMEI(attributeId));
-}
-
-CHIP_ERROR PushAvStreamTransportManager::LoadCurrentConnections(std::vector<TransportConfigurationStorage> & currentConnections)
-{
-    ChipLogProgress(Zcl, "Push AV Current Connections loaded");
-
-    return CHIP_NO_ERROR;
-}
-
-CHIP_ERROR
-PushAvStreamTransportManager::PersistentAttributesLoadedCallback()
-{
-    ChipLogProgress(Zcl, "Push AV Stream Transport Persistent attributes loaded");
-
-    return CHIP_NO_ERROR;
-}
-
 void PushAvStreamTransportManager::OnZoneTriggeredEvent(uint16_t zoneId)
 {
     for (auto & pavst : mTransportMap)
@@ -579,4 +680,24 @@ void PushAvStreamTransportManager::SetTLSCerts(Tls::CertificateTable::BufferedCl
     }
 
     mBufferClientCertKey.assign(keypairDer.data(), keypairDer.data() + keypairDer.size());
+}
+
+void PushAvStreamTransportManager::OnAttributeChanged(AttributeId attributeId)
+{
+    ChipLogProgress(Zcl, "Attribute changed for AttributeId = " ChipLogFormatMEI, ChipLogValueMEI(attributeId));
+}
+
+CHIP_ERROR PushAvStreamTransportManager::LoadCurrentConnections(std::vector<TransportConfigurationStorage> & currentConnections)
+{
+    ChipLogProgress(Zcl, "Push AV Current Connections loaded");
+
+    return CHIP_NO_ERROR;
+}
+
+CHIP_ERROR
+PushAvStreamTransportManager::PersistentAttributesLoadedCallback()
+{
+    ChipLogProgress(Zcl, "Push AV Stream Transport Persistent attributes loaded");
+
+    return CHIP_NO_ERROR;
 }
