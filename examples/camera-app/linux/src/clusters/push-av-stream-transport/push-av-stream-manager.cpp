@@ -379,6 +379,7 @@ bool PushAvStreamTransportManager::ValidateSegmentDuration(uint16_t segmentDurat
         return false;
     }
 
+    for (const VideoStream & stream : allocatedVideoStreams)
     {
         const VideoStreamStruct & videoStreamParams = stream.videoStreamParams;
 
