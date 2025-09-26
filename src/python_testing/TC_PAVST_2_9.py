@@ -153,7 +153,7 @@ class TC_PAVST_2_9(MatterBaseTest, PAVSTTestBase, PAVSTIUtils):
         )
 
         self.step(6)
-        status = await self.allocate_one_pushav_transport(endpoint, tlsEndPoint=tlsEndpointId, url=f"https://{host_ip}:1234/streams/{uploadStreamId}", expiryTime=5)
+        status = await self.allocate_one_pushav_transport(endpoint, tlsEndPoint=tlsEndpointId, url=f"https://{host_ip}:1234/streams/{uploadStreamId}/", expiryTime=5)
         asserts.assert_equal(
             status, Status.Success, "Push AV Transport should be allocated successfully"
         )

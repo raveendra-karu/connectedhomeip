@@ -761,15 +761,15 @@ PushAvStreamTransportServerLogic::HandleAllocatePushTransport(CommandHandler & h
         }
     }
 
-    bool isValidSegmentDuration = mDelegate->ValidateSegmentDuration(
-        transportOptions.containerOptions.CMAFContainerOptions.Value().segmentDuration, transportOptions.videoStreamID);
-    if (isValidSegmentDuration == false)
-    {
-        auto segmentDurationStatus = to_underlying(StatusCodeEnum::kInvalidOptions);
-        ChipLogError(Zcl, "HandleAllocatePushTransport[ep=%d]: Segment Duration not within allowed range", mEndpointId);
-        handler.AddClusterSpecificFailure(commandPath, segmentDurationStatus);
-        return std::nullopt;
-    }
+    // bool isValidSegmentDuration = mDelegate->ValidateSegmentDuration(
+    //     transportOptions.containerOptions.CMAFContainerOptions.Value().segmentDuration, transportOptions.videoStreamID);
+    // if (isValidSegmentDuration == false)
+    // {
+    //     auto segmentDurationStatus = to_underlying(StatusCodeEnum::kInvalidOptions);
+    //     ChipLogError(Zcl, "HandleAllocatePushTransport[ep=%d]: Segment Duration not within allowed range", mEndpointId);
+    //     handler.AddClusterSpecificFailure(commandPath, segmentDurationStatus);
+    //     return std::nullopt;
+    // }
 
     uint16_t connectionID = GenerateConnectionID();
 

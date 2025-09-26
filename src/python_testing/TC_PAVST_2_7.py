@@ -177,7 +177,7 @@ class TC_PAVST_2_7(MatterBaseTest, PAVSTTestBase, PAVSTIUtils):
         )
 
         status = await self.allocate_one_pushav_transport(endpoint, triggerType=pvcluster.Enums.TransportTriggerTypeEnum.kContinuous,
-                                                          tlsEndPoint=tlsEndpointId, url=f"https://{host_ip}:1234/streams/{uploadStreamId}")
+                                                          tlsEndPoint=tlsEndpointId, url=f"https://{host_ip}:1234/streams/{uploadStreamId}/")
         asserts.assert_equal(
             status, Status.Success, "Push AV Transport should be allocated successfully"
         )
@@ -234,7 +234,7 @@ class TC_PAVST_2_7(MatterBaseTest, PAVSTTestBase, PAVSTIUtils):
             "DUT responds with SUCCESS status code.")
 
         self.step(6)
-        timeControl = {"initialDuration": 1, "augmentationDuration": 1, "maxDuration": 1, "blindDuration": 1}
+        timeControl = {"initialDuration": 10, "augmentationDuration": 1, "maxDuration": 15, "blindDuration": 1}
         cmd = pvcluster.Commands.ManuallyTriggerTransport(
             connectionID=aConnectionID,
             activationReason=pvcluster.Enums.TriggerActivationReasonEnum.kEmergency,
@@ -257,7 +257,7 @@ class TC_PAVST_2_7(MatterBaseTest, PAVSTTestBase, PAVSTIUtils):
             "DUT responds with SUCCESS status code.")
 
         self.step(8)
-        timeControl = {"initialDuration": 1, "augmentationDuration": 1, "maxDuration": 1, "blindDuration": 1}
+        timeControl = {"initialDuration": 10, "augmentationDuration": 1, "maxDuration": 15, "blindDuration": 1}
         cmd = pvcluster.Commands.ManuallyTriggerTransport(
             connectionID=aConnectionID,
             activationReason=pvcluster.Enums.TriggerActivationReasonEnum.kEmergency,
@@ -292,7 +292,7 @@ class TC_PAVST_2_7(MatterBaseTest, PAVSTTestBase, PAVSTIUtils):
                           "maxPreRollLen": 4000, }
 
         status = await self.allocate_one_pushav_transport(endpoint, trigger_Options=triggerOptions, tlsEndPoint=tlsEndpointId,
-                                                          url=f"https://{host_ip}:1234/streams/{uploadStreamId}")
+                                                          url=f"https://{host_ip}:1234/streams/{uploadStreamId}/")
         asserts.assert_equal(
             status, Status.Success, "Push AV Transport should be allocated successfully"
         )
@@ -316,7 +316,7 @@ class TC_PAVST_2_7(MatterBaseTest, PAVSTTestBase, PAVSTIUtils):
             "DUT responds with SUCCESS status code.")
 
         self.step(12)
-        timeControl = {"initialDuration": 1, "augmentationDuration": 1, "maxDuration": 1, "blindDuration": 1}
+        timeControl = {"initialDuration": 10, "augmentationDuration": 1, "maxDuration": 15, "blindDuration": 1}
         cmd = pvcluster.Commands.ManuallyTriggerTransport(
             connectionID=aConnectionID,
             activationReason=pvcluster.Enums.TriggerActivationReasonEnum.kUserInitiated,
