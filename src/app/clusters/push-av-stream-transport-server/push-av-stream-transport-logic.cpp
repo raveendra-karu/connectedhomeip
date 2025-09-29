@@ -713,6 +713,12 @@ PushAvStreamTransportServerLogic::HandleAllocatePushTransport(CommandHandler & h
             }
 
             transportOptionsPtr->videoStreamID.SetValue(videoStreamID);
+            auto dStatus = Protocols::InteractionModel::ClusterStatusCode(
+                mDelegate->ValidateVideoStream(transportOptionsPtr->videoStreamID.Value().Value()));
+            if (!dStatus.IsSuccess()) 
+            {
+                ChipLogError(Zcl, "HandleAllocatePushTransport[ep=%d]: Validate Video stream failed", mEndpointId);
+            }
         }
         else
         {
@@ -745,6 +751,12 @@ PushAvStreamTransportServerLogic::HandleAllocatePushTransport(CommandHandler & h
             }
 
             transportOptionsPtr->audioStreamID.SetValue(audioStreamID);
+            auto dStatus = Protocols::InteractionModel::ClusterStatusCode(
+                mDelegate->ValidateAudioStream(transportOptionsPtr->audioStreamID.Value().Value()));
+            if (!dStatus.IsSuccess()) 
+            {
+                ChipLogError(Zcl, "HandleAllocatePushTransport[ep=%d]: Validate Audio stream failed", mEndpointId);
+            }
         }
         else
         {
@@ -760,16 +772,21 @@ PushAvStreamTransportServerLogic::HandleAllocatePushTransport(CommandHandler & h
             }
         }
     }
+    Optional<DataModel::Nullable<uint16_t>> videoStID=transportOptions.videoStreamID;
+    if (transportOptions.videoStreamID.HasValue() && transportOptions.videoStreamID.Value().IsNull())
+    {
+        videoStID=transportOptionsPtr->videoStreamID;
+    } 
 
-    // bool isValidSegmentDuration = mDelegate->ValidateSegmentDuration(
-    //     transportOptions.containerOptions.CMAFContainerOptions.Value().segmentDuration, transportOptions.videoStreamID);
-    // if (isValidSegmentDuration == false)
-    // {
-    //     auto segmentDurationStatus = to_underlying(StatusCodeEnum::kInvalidOptions);
-    //     ChipLogError(Zcl, "HandleAllocatePushTransport[ep=%d]: Segment Duration not within allowed range", mEndpointId);
-    //     handler.AddClusterSpecificFailure(commandPath, segmentDurationStatus);
-    //     return std::nullopt;
-    // }
+    bool isValidSegmentDuration = mDelegate->ValidateSegmentDuration(
+        transportOptions.containerOptions.CMAFContainerOptions.Value().segmentDuration, videoStID);
+    if (isValidSegmentDuration == false)
+    {
+        auto segmentDurationStatus = to_underlying(StatusCodeEnum::kInvalidOptions);
+        ChipLogError(Zcl, "HandleAllocatePushTransport[ep=%d]: Segment Duration not within allowed range", mEndpointId);
+        handler.AddClusterSpecificFailure(commandPath, segmentDurationStatus);
+        return std::nullopt;
+    }
 
     uint16_t connectionID = GenerateConnectionID();
 

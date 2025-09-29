@@ -181,13 +181,41 @@ void CameraAVStreamManager::GetBandwidthForStreams(const Optional<DataModel::Nul
     return;
 }
 
+Protocols::InteractionModel::Status CameraAVStreamManager::GetVideoStreamIdForStreams(StreamUsageEnum streamUsage, uint16_t & videoStreamId)
+{
+    auto & availableVideoStreams = GetCameraAVStreamMgmtServer()->GetAllocatedVideoStreams();
+    for (const chip::app::Clusters::CameraAvStreamManagement::Structs::VideoStreamStruct::Type & stream : availableVideoStreams)
+    {
+        if (stream.streamUsage == streamUsage)
+        {
+            videoStreamId = stream.videoStreamID;
+            return Status::Success;
+        }
+    }
+    return Status::Failure;
+}
+
+Protocols::InteractionModel::Status CameraAVStreamManager::GetAudioStreamIdForStreams(StreamUsageEnum streamUsage, uint16_t & audioStreamId)
+{
+    auto & availableAudioStreams = GetCameraAVStreamMgmtServer()->GetAllocatedAudioStreams();
+    for (const chip::app::Clusters::CameraAvStreamManagement::Structs::AudioStreamStruct::Type & stream : availableAudioStreams)
+    {
+        if (stream.streamUsage == streamUsage)
+        {
+            audioStreamId = stream.audioStreamID;
+            return Status::Success;
+        }
+    }
+    return Status::Failure;
+}
+
 CHIP_ERROR CameraAVStreamManager::ValidateVideoStreamID(uint16_t videoStreamId)
 {
     const std::vector<VideoStreamStruct> & allocatedVideoStreams = GetCameraAVStreamMgmtServer()->GetAllocatedVideoStreams();
-
+    printf("\n From camera av stream manager validate videostream id  size of allocated vdo stream %lu\n",allocatedVideoStreams.size());
     // Check if the videoStreamId exists in allocated streams
     for (const auto & stream : allocatedVideoStreams)
-    {
+    {printf("\n vdo stream available %d and passed vdo stream is %d\n",(int)stream.videoStreamID,videoStreamId);
         if (stream.videoStreamID == videoStreamId)
         {
             ChipLogProgress(Camera, "Video stream ID %u is valid and allocated", videoStreamId);

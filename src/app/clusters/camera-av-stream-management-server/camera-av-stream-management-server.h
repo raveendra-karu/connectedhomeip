@@ -312,6 +312,10 @@ public:
                                         const Optional<DataModel::Nullable<uint16_t>> & audioStreamId,
                                         uint32_t & outBandwidthbps) = 0;
 
+    virtual Protocols::InteractionModel::Status GetVideoStreamIdForStreams(StreamUsageEnum streamUsage, uint16_t & videoStreamId) = 0;
+
+    virtual Protocols::InteractionModel::Status GetAudioStreamIdForStreams(StreamUsageEnum streamUsage, uint16_t & audioStreamId) = 0;
+
 private:
     friend class CameraAVStreamMgmtServer;
 

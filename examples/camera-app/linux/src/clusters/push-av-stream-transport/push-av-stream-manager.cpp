@@ -270,6 +270,28 @@ void PushAvStreamTransportManager::GetBandwidthForStreams(const Optional<DataMod
     return;
 }
 
+Protocols::InteractionModel::Status PushAvStreamTransportManager::GetVideoStreamIdForStreams(StreamUsageEnum streamUsage,
+                                                                                              uint16_t & videoStreamId)
+{
+    if (mCameraDevice == nullptr)
+    {
+        ChipLogError(Camera, "CameraDeviceInterface not initialized for GetVideoStreamIdForStreams");
+        return Status::Failure;
+    }
+    return mCameraDevice->GetCameraAVStreamMgmtDelegate().GetVideoStreamIdForStreams(streamUsage, videoStreamId);
+}
+
+Protocols::InteractionModel::Status PushAvStreamTransportManager::GetAudioStreamIdForStreams(StreamUsageEnum streamUsage,
+                                                                                              uint16_t & audioStreamId)
+{
+    if (mCameraDevice == nullptr)
+    {
+        ChipLogError(Camera, "CameraDeviceInterface not initialized for GetAudioStreamIdForStreams");
+        return Status::Failure;
+    }
+    return mCameraDevice->GetCameraAVStreamMgmtDelegate().GetAudioStreamIdForStreams(streamUsage, audioStreamId);
+}
+
 Protocols::InteractionModel::Status
 PushAvStreamTransportManager::ValidateBandwidthLimit(StreamUsageEnum streamUsage,
                                                      const Optional<DataModel::Nullable<uint16_t>> & videoStreamId,
@@ -471,24 +493,8 @@ Protocols::InteractionModel::Status PushAvStreamTransportManager::SelectVideoStr
         ChipLogError(Camera, "CameraDeviceInterface not initialized");
         return Status::Failure;
     }
-    auto & allocatedVideoStreams = mCameraDevice->GetCameraHALInterface().GetAvailableVideoStreams();
 
-    if (allocatedVideoStreams.empty())
-    {
-        return Status::Failure;
-    }
-    for (VideoStream & stream : allocatedVideoStreams)
-    {
-        VideoStreamStruct & videoStreamParams = stream.videoStreamParams;
-        if (videoStreamParams.streamUsage == streamUsage)
-        {
-            videoStreamId      = videoStreamParams.videoStreamID;
-            mVideoStreamParams = videoStreamParams;
-            return Status::Success;
-        }
-    }
-
-    return Status::Failure;
+    return GetVideoStreamIdForStreams(streamUsage, videoStreamId);
 }
 
 Protocols::InteractionModel::Status PushAvStreamTransportManager::SelectAudioStream(StreamUsageEnum streamUsage,
@@ -500,23 +506,7 @@ Protocols::InteractionModel::Status PushAvStreamTransportManager::SelectAudioStr
         return Status::Failure;
     }
 
-    auto & allocatedAudioStreams = mCameraDevice->GetCameraHALInterface().GetAvailableAudioStreams();
-    if (allocatedAudioStreams.empty())
-    {
-        return Status::Failure;
-    }
-    for (AudioStream & stream : allocatedAudioStreams)
-    {
-        AudioStreamStruct & audioStreamParams = stream.audioStreamParams;
-        if (audioStreamParams.streamUsage == streamUsage)
-        {
-            audioStreamId      = audioStreamParams.audioStreamID;
-            mAudioStreamParams = audioStreamParams;
-            return Status::Success;
-        }
-    }
-
-    return Status::Failure;
+    return GetAudioStreamIdForStreams(streamUsage, audioStreamId);
 }
 
 Protocols::InteractionModel::Status PushAvStreamTransportManager::ValidateZoneId(uint16_t zoneId)

@@ -311,6 +311,16 @@ void CameraAVStreamManager::GetBandwidthForStreams(const Optional<DataModel::Nul
     ChipLogDetail(Zcl, "Get bandwidth for streams called");
 }
 
+Protocols::InteractionModel::Status GetVideoStreamIdForStreams(StreamUsageEnum streamUsage, uint16_t & videoStreamId)
+{
+    return Status::Success;
+}
+
+Protocols::InteractionModel::Status GetAudioStreamIdForStreams(StreamUsageEnum streamUsage, uint16_t & audioStreamId)
+{
+    return Status::Success;
+}
+
 void CameraAVStreamManager::InitializeAvailableVideoStreams()
 {
     // Example initialization with different codecs
