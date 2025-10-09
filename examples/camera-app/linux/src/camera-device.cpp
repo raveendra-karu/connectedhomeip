@@ -567,7 +567,7 @@ GstElement * CameraDevice::CreateAudioPipeline(const std::string & device, int c
     else
     {
         source = gst_element_factory_make("pulsesrc", "source");
-        // g_object_set(source, "device", device.c_str(), nullptr);
+        g_object_set(source, "device", device.c_str(), nullptr);
     }
 
     GstElement * acaps   = gst_element_factory_make("capsfilter", "acaps");

@@ -154,13 +154,17 @@ void PushAVTransport::ConfigureRecorderSettings(const TransportOptionsStruct & t
     mClipInfo.mInputTimeBase = { 1, 1000000 };
 
     uint8_t audioCodec   = static_cast<uint8_t>(audioStreamParams.audioCodec);
-    mAudioInfo.mChannels = (audioStreamParams.channelCount == 0) ? 1 : audioStreamParams.channelCount;
+    mAudioInfo.mChannels = (audioStreamParams.channelCount == 0) ? 2 : audioStreamParams.channelCount;
 
     if (audioCodec == 0)
     {
+        if (audioStreamParams.sampleRate == 0)
+        {
+            audioStreamParams.sampleRate = 48000; // Fallback value for invalid sample rate
+        }
         mAudioInfo.mAudioCodecId       = AV_CODEC_ID_OPUS;
-        mAudioInfo.mAudioTimeBase      = { 1, 48000 };
-        mAudioInfo.mAudioFrameDuration = 19200;
+        mAudioInfo.mAudioTimeBase      = { 1, static_cast<int>(audioStreamParams.sampleRate) };
+        mAudioInfo.mAudioFrameDuration = 20000; // Default OPUS frame duration
     }
     else if (audioCodec == 2)
     {
@@ -171,10 +175,6 @@ void PushAVTransport::ConfigureRecorderSettings(const TransportOptionsStruct & t
         ChipLogError(Camera, "Unsupported Audio codec");
     }
 
-    if (audioStreamParams.sampleRate == 0)
-    {
-        audioStreamParams.sampleRate = 48000; // Fallback value for invalid sample rate
-    }
     mAudioInfo.mSampleRate = audioStreamParams.sampleRate;
     if (audioStreamParams.bitRate == 0)
     {
@@ -210,8 +210,8 @@ void PushAVTransport::ConfigureRecorderSettings(const TransportOptionsStruct & t
     mVideoInfo.mHeight = videoStreamParams.maxResolution.height;
     if (videoStreamParams.minFrameRate == 0)
     {
-        ChipLogError(Camera, "Invalid frame rate: 0. Using fallback 15 fps.");
-        videoStreamParams.minFrameRate = 15;
+        ChipLogError(Camera, "Invalid frame rate: 0. Using fallback 30 fps.");
+        videoStreamParams.minFrameRate = 30;
     }
     mVideoInfo.mFrameRate = videoStreamParams.minFrameRate;
 
