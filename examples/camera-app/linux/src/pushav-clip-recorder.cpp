@@ -668,20 +668,20 @@ int PushAVClipRecorder::AddStreamToOutput(AVMediaType type)
         mVideoStream->codecpar->height    = mVideoInfo.mHeight;
         mVideoStream->avg_frame_rate      = (AVRational){ mVideoInfo.mFrameRate, 1 };
         // Ensure a sensible bit rate is set for the muxer (some formats require it).
-        if (mVideoInfo.mBitRate > 0)
-        {
-            mVideoStream->codecpar->bit_rate = mVideoInfo.mBitRate;
-        }
-        else
-        {
-            // Fallback to a conservative default bitrate (e.g. 512 kbps) if not provided
-            mVideoStream->codecpar->bit_rate = 512000;
-        }
-        // Set stream time_base to match input/frame rate to help timestamp scaling.
-        if (mVideoInfo.mFrameRate > 0)
-        {
-            mVideoStream->time_base = (AVRational){ 1, mVideoInfo.mFrameRate };
-        }
+        // if (mVideoInfo.mBitRate > 0)
+        // {
+        //     mVideoStream->codecpar->bit_rate = mVideoInfo.mBitRate;
+        // }
+        // else
+        // {
+        //     // Fallback to a conservative default bitrate (e.g. 512 kbps) if not provided
+        //     mVideoStream->codecpar->bit_rate = 512000;
+        // }
+        // // Set stream time_base to match input/frame rate to help timestamp scaling.
+        // if (mVideoInfo.mFrameRate > 0)
+        // {
+        //     mVideoStream->time_base = (AVRational){ 1, mVideoInfo.mFrameRate };
+        // }
         ChipLogProgress(Camera, "[PAVST_DEBUG] Video width: %d height: %d", mVideoInfo.mWidth, mVideoInfo.mHeight);
         ChipLogProgress(Camera, "[PAVST_DEBUG] Video frame rate: %d", mVideoInfo.mFrameRate);
         ChipLogProgress(Camera, "[PAVST_DEBUG] Video bit rate: %d", mVideoInfo.mBitRate);
