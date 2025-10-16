@@ -17,6 +17,7 @@
  */
 
 #include "pushav-clip-recorder.h"
+#include <chrono>
 #include <cstring>
 #include <dirent.h>
 #include <fstream>
@@ -50,8 +51,7 @@ AVDictionary * options = NULL;
 
 PushAVClipRecorder::PushAVClipRecorder(ClipInfoStruct & aClipInfo, AudioInfoStruct & aAudioInfo, VideoInfoStruct & aVideoInfo,
                                        PushAVUploader * aUploader) :
-    mClipInfo(aClipInfo),
-    mAudioInfo(aAudioInfo), mVideoInfo(aVideoInfo), mUploader(aUploader)
+    mClipInfo(aClipInfo), mAudioInfo(aAudioInfo), mVideoInfo(aVideoInfo), mUploader(aUploader)
 {
     mFormatContext        = nullptr;
     mInputFormatContext   = nullptr;
@@ -74,6 +74,90 @@ PushAVClipRecorder::PushAVClipRecorder(ClipInfoStruct & aClipInfo, AudioInfoStru
 
     mVideoInfo.mVideoStreamIndex = -1;
     mAudioInfo.mAudioStreamIndex = -1;
+    mVideoFrameCount             = 0;
+    mAudioFrameCount             = 0;
+    mVideoFrameRateCalc          = 0;
+    mAudioFrameRateCalc          = 0;
+    mLastVideoFrameTime          = std::chrono::steady_clock::time_point();
+    mLastAudioFrameTime          = std::chrono::steady_clock::time_point();
+    av_log_set_level(AV_LOG_DEBUG);
+
+// Log system information
+#ifdef __linux__
+    ChipLogProgress(Camera, "[PAVST_DEBUG] Running on Linux OS");
+    // Try to detect specific Linux distributions
+    {
+        std::ifstream osRelease("/etc/os-release");
+        if (osRelease.is_open())
+        {
+            std::string line;
+            std::string osName;
+            while (std::getline(osRelease, line))
+            {
+                if (line.find("PRETTY_NAME=") == 0)
+                {
+                    osName = line.substr(13); // Remove "PRETTY_NAME=" and quotes
+                    if (osName.back() == '"')
+                        osName.pop_back();
+                    if (osName.front() == '"')
+                        osName = osName.substr(1);
+                    ChipLogProgress(Camera, "[PAVST_DEBUG] Linux Distribution: %s", osName.c_str());
+                    break;
+                }
+            }
+
+            // Check if this is a Raspberry Pi
+            std::ifstream cpuInfo("/proc/cpuinfo");
+            if (cpuInfo.is_open())
+            {
+                std::string line;
+                while (std::getline(cpuInfo, line))
+                {
+                    if (line.find("Hardware") != std::string::npos || line.find("Model") != std::string::npos)
+                    {
+                        ChipLogProgress(Camera, "[PAVST_DEBUG] Raspberry Pi Info: %s", line.c_str());
+                        // Also check for Raspberry Pi specific OS info
+                        if (osName.find("Raspbian") != std::string::npos || osName.find("Raspberry") != std::string::npos)
+                        {
+                            ChipLogProgress(Camera, "[PAVST_DEBUG] Running on Raspberry Pi OS");
+                            // Get OS version
+                            std::ifstream versionFile("/etc/os-release");
+                            if (versionFile.is_open())
+                            {
+                                std::string versionLine;
+                                while (std::getline(versionFile, versionLine))
+                                {
+                                    if (versionLine.find("VERSION=") == 0)
+                                    {
+                                        std::string version = versionLine.substr(9); // Remove "VERSION=" and quotes
+                                        if (version.back() == '"')
+                                            version.pop_back();
+                                        if (version.front() == '"')
+                                            version = version.substr(1);
+                                        ChipLogProgress(Camera, "[PAVST_DEBUG] Raspberry Pi OS Version: %s", version.c_str());
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        else
+        {
+            ChipLogProgress(Camera, "[PAVST_DEBUG] Linux Distribution: Unknown");
+        }
+    }
+#elif __APPLE__
+    ChipLogProgress(Camera, "[PAVST_DEBUG] Running on macOS OS");
+#else
+    ChipLogProgress(Camera, "[PAVST_DEBUG] Running on unknown OS");
+#endif
+
+    // Log FFmpeg version
+    ChipLogProgress(Camera, "[PAVST_DEBUG] Using FFmpeg version %s", av_version_info());
 
     if (mClipInfo.mHasAudio && mClipInfo.mHasVideo)
     {
@@ -289,11 +373,36 @@ AVPacket * PushAVClipRecorder::CreatePacket(const uint8_t * data, int size, bool
 
     if (isVideo)
     {
+        // Calculate actual video framerate
+        auto now = std::chrono::steady_clock::now();
+        if (mLastVideoFrameTime.time_since_epoch().count() > 0)
+        {
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - mLastVideoFrameTime).count();
+            if (duration > 0)
+            {
+                // Calculate instantaneous framerate (frames per second)
+                double instantFps   = 1000.0 / duration;
+                mVideoFrameRateCalc = static_cast<int>(instantFps + 0.5); // Round to nearest integer
+
+                // Log every 30 frames to avoid too much logging
+                if (++mVideoFrameCount % 30 == 0)
+                {
+                    ChipLogProgress(Camera, "Video actual framerate: %d fps (instant: %.2f fps)", mVideoFrameRateCalc, instantFps);
+                }
+            }
+        }
+        mLastVideoFrameTime = now;
+
         if (IsH264IFrame(data, static_cast<unsigned int>(size)))
         {
             mFoundFirstIFramePts = mVideoInfo.mVideoPts;
             packet->flags        = AV_PKT_FLAG_KEY;
             ChipLogProgress(Camera, "Found I-frame at PTS: %ld", mVideoInfo.mVideoPts);
+            // Log GOP information (assuming GOP size is related to frame rate and keyframe interval)
+            if (mVideoInfo.mFrameRate > 0)
+            {
+                ChipLogProgress(Camera, "Video GOP size: %d frames", mVideoInfo.mFrameRate);
+            }
         }
 
         if (mClipInfo.mHasVideo && mFoundFirstIFramePts < 0)
@@ -312,6 +421,28 @@ AVPacket * PushAVClipRecorder::CreatePacket(const uint8_t * data, int size, bool
     }
     else
     {
+        // Calculate actual audio framerate (sample rate)
+        auto now = std::chrono::steady_clock::now();
+        if (mLastAudioFrameTime.time_since_epoch().count() > 0)
+        {
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - mLastAudioFrameTime).count();
+            if (duration > 0)
+            {
+                // Calculate instantaneous "framerate" for audio (samples per second)
+                double instantRate  = 1000.0 / duration;
+                mAudioFrameRateCalc = static_cast<int>(instantRate + 0.5); // Round to nearest integer
+
+                // Log every 100 audio frames to avoid too much logging
+                if (++mAudioFrameCount % 100 == 0)
+                {
+                    ChipLogProgress(Camera, "Audio actual rate: %d frames/sec (instant: %.2f frames/sec)", mAudioFrameRateCalc,
+                                    instantRate);
+                    ChipLogProgress(Camera, "Audio sample rate: %d Hz", mAudioInfo.mSampleRate);
+                }
+            }
+        }
+        mLastAudioFrameTime = now;
+
         if (mClipInfo.mHasVideo && mFoundFirstIFramePts < 0 && mFoundFirstIFramePts <= mAudioInfo.mAudioPts)
         {
             ChipLogError(Camera, "ERROR: frames will be dropped till an Iframe is recived");
@@ -536,6 +667,24 @@ int PushAVClipRecorder::AddStreamToOutput(AVMediaType type)
         mVideoStream->codecpar->width     = mVideoInfo.mWidth;
         mVideoStream->codecpar->height    = mVideoInfo.mHeight;
         mVideoStream->avg_frame_rate      = (AVRational){ mVideoInfo.mFrameRate, 1 };
+        // Ensure a sensible bit rate is set for the muxer (some formats require it).
+        if (mVideoInfo.mBitRate > 0)
+        {
+            mVideoStream->codecpar->bit_rate = mVideoInfo.mBitRate;
+        }
+        else
+        {
+            // Fallback to a conservative default bitrate (e.g. 512 kbps) if not provided
+            mVideoStream->codecpar->bit_rate = 512000;
+        }
+        // Set stream time_base to match input/frame rate to help timestamp scaling.
+        if (mVideoInfo.mFrameRate > 0)
+        {
+            mVideoStream->time_base = (AVRational){ 1, mVideoInfo.mFrameRate };
+        }
+        ChipLogProgress(Camera, "[PAVST_DEBUG] Video width: %d height: %d", mVideoInfo.mWidth, mVideoInfo.mHeight);
+        ChipLogProgress(Camera, "[PAVST_DEBUG] Video frame rate: %d", mVideoInfo.mFrameRate);
+        ChipLogProgress(Camera, "[PAVST_DEBUG] Video bit rate: %d", mVideoInfo.mBitRate);
     }
     else if (type == AVMEDIA_TYPE_AUDIO)
     {
@@ -572,6 +721,8 @@ int PushAVClipRecorder::AddStreamToOutput(AVMediaType type)
         av_channel_layout_default(&mAudioEncoderContext->ch_layout, mAudioInfo.mChannels);
 #endif
 
+        ChipLogProgress(Camera, "[PAVST_DEBUG] Audio bit rate: %d", mAudioInfo.mBitRate);
+        ChipLogProgress(Camera, "[PAVST_DEBUG] Audio sample rate: %d", mAudioInfo.mSampleRate);
         mAudioEncoderContext->bit_rate              = mAudioInfo.mBitRate;
         mAudioEncoderContext->sample_fmt            = audioCodec->sample_fmts[0];
         mAudioEncoderContext->time_base             = (AVRational){ 1, mAudioInfo.mSampleRate };
@@ -780,6 +931,8 @@ void PushAVClipRecorder::CleanupOutput()
     mVideoStream = nullptr;
     mAudioStream = nullptr;
     mMetadataSet = false;
+    ChipLogProgress(Camera, "[PAVST_DEBUG] Cleanup completed - Total Video packets: %d, Total Audio packets: %d", mVideoFrameCount,
+                    mAudioFrameCount);
     ChipLogProgress(Camera, "Cleanup completed");
 }
 
@@ -874,16 +1027,23 @@ void PushAVClipRecorder::FinalizeCurrentClip(int reason)
     int64_t clipLengthInPTS = currentPts - mCurrentClipStartPts;
     // Final duration has to be (clipDuration + preRollLen) seconds
     const int64_t remainingDuration = mClipInfo.mInitialDurationS - mClipInfo.mElapsedTimeS + (mClipInfo.mPreRollLengthMs / 1000);
-    const int64_t clipDuration      = (remainingDuration > 0) ? remainingDuration * AV_TIME_BASE_Q.den : 0;
+    const int64_t clipDuration      = (remainingDuration > 0) ? remainingDuration * AV_TIME_BASE : 0;
     // Pre-calculate common path components
     const std::string basePath =
         mClipInfo.mOutputPath + "session_" + std::to_string(mClipInfo.mSessionNumber) + "/" + mClipInfo.mTrackName;
+
+    ChipLogProgress(Camera, "[PAVST_DEBUG] FinalizeCurrentClip: reason: %d, clipDuration: %ld, clipLengthInPTS: %ld, basePath: %s",
+                    reason, clipDuration, clipLengthInPTS, basePath.c_str());
+    ChipLogProgress(Camera, "[PAVST_DEBUG] mInitialDuration: %u, mElapsedTime: %u, mPreRollLength: %u, AV_TIME_BASE: %d",
+                    mClipInfo.mInitialDurationS, mClipInfo.mElapsedTimeS, mClipInfo.mPreRollLengthMs, AV_TIME_BASE);
 
     if (reason || ((clipLengthInPTS >= clipDuration) && (mClipInfo.mTriggerType != 2)))
     {
         ChipLogDetail(Camera, "Clip record completed, finalizing clip for sessionID: %lu Track name: %s, Reason: %s",
                       mClipInfo.mSessionNumber, mClipInfo.mTrackName.c_str(),
                       (reason == 0) ? "End of clip reached" : "Error occurred");
+        ChipLogDetail(Camera, "[PAVST_DEBUG] Clip statistics - Video packets: %d, Audio packets: %d", mVideoFrameCount,
+                      mAudioFrameCount);
         Stop();
         mCurrentClipStartPts = AV_NOPTS_VALUE;
     }

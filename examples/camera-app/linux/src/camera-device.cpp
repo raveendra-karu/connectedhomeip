@@ -486,12 +486,13 @@ GstElement * CameraDevice::CreateVideoPipeline(const std::string & device, int w
         const int kBallAnimationPattern = 18;
         source                          = gst_element_factory_make("videotestsrc", "source");
         g_object_set(source, "pattern", kBallAnimationPattern, nullptr);
-        ChipLogProgress(Camera, "Video piepline: using test video source");
+        ChipLogProgress(Camera, "[PAVST_DEBUG] Video pipeline: using test video source");
     }
     else
     {
         source = gst_element_factory_make("v4l2src", "source");
         g_object_set(source, "device", device.c_str(), nullptr);
+        ChipLogProgress(Camera, "[PAVST_DEBUG] Video pipeline: using real camera source");
     }
 
     // Check for any nullptr among the created elements
@@ -530,6 +531,11 @@ GstElement * CameraDevice::CreateVideoPipeline(const std::string & device, int w
     // Configure encoder for low‑latency and force IDR at start
     g_object_set(x264enc, "tune", 0, "speed-preset", 1, "key-int-max", framerate * 1, "insert-vui", TRUE, nullptr);
 
+    // Log the configured framerate
+    ChipLogProgress(Camera, "Configured video encoder with framerate: %d fps", framerate);
+    // Log GOP size (key-int-max)
+    ChipLogProgress(Camera, "Configured video encoder with GOP size: %d frames", framerate * 1);
+
     // Configure appsink for receiving H.264 buffers data
     g_object_set(appsink, "emit-signals", TRUE, nullptr);
 
@@ -562,12 +568,13 @@ GstElement * CameraDevice::CreateAudioPipeline(const std::string & device, int c
     {
         source = gst_element_factory_make("audiotestsrc", "source");
         g_object_set(source, "wave", 0, "is-live", TRUE, nullptr); // beep 0
-        ChipLogProgress(Camera, "Audio piepline: using test audio source");
+        ChipLogProgress(Camera, "[PAVST_DEBUG] Audio pipeline: using test audio source");
     }
     else
     {
         source = gst_element_factory_make("pulsesrc", "source");
         // g_object_set(source, "device", device.c_str(), nullptr);
+        ChipLogProgress(Camera, "[PAVST_DEBUG] Audio pipeline: using real audio source");
     }
 
     GstElement * acaps   = gst_element_factory_make("capsfilter", "acaps");

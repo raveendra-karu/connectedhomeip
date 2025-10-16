@@ -189,6 +189,16 @@ private:
     VideoInfoStruct mVideoInfo; ///< Video stream parameters
     /// @}
 
+    /// @name Framerate Tracking
+    /// @{
+    std::chrono::steady_clock::time_point mLastVideoFrameTime;
+    std::chrono::steady_clock::time_point mLastAudioFrameTime;
+    int mVideoFrameCount    = 0;
+    int mAudioFrameCount    = 0;
+    int mVideoFrameRateCalc = 0;
+    int mAudioFrameRateCalc = 0;
+    /// @}
+
     std::function<void()> mOnStopCallback;
 
     AVFormatContext * mFormatContext;

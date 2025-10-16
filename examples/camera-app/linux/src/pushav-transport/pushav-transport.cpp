@@ -23,8 +23,7 @@ using namespace chip::app::Clusters::PushAvStreamTransport;
 
 PushAVTransport::PushAVTransport(const TransportOptionsStruct & transportOptions, const uint16_t connectionID,
                                  AudioStreamStruct & audioStreamParams, VideoStreamStruct & videoStreamParams) :
-    mAudioStreamParams(audioStreamParams),
-    mVideoStreamParams(videoStreamParams)
+    mAudioStreamParams(audioStreamParams), mVideoStreamParams(videoStreamParams)
 {
     ConfigureRecorderSettings(transportOptions, audioStreamParams, videoStreamParams);
     mConnectionID    = connectionID;
@@ -86,6 +85,7 @@ void PrintTransportSettings(PushAVClipRecorder::ClipInfoStruct clipInfo, PushAVC
     ChipLogProgress(Camera, "Video Time Base: %d/%d", videoInfo.mVideoTimeBase.num, videoInfo.mVideoTimeBase.den);
     ChipLogProgress(Camera, "Frame Duration: %d ticks", videoInfo.mVideoFrameDuration);
     ChipLogProgress(Camera, "Bit Rate: %d bps", videoInfo.mBitRate);
+    ChipLogProgress(Camera, "GOP Size: %d frames", videoInfo.mFrameRate); // GOP size typically equals frame rate
 }
 
 void PushAVTransport::ConfigureRecorderTimeSetting(
@@ -221,6 +221,10 @@ void PushAVTransport::ConfigureRecorderSettings(const TransportOptionsStruct & t
     mVideoInfo.mBitRate            = videoStreamParams.minBitRate;
 
     PrintTransportSettings(mClipInfo, mAudioInfo, mVideoInfo);
+
+    // Log FFmpeg version
+    ChipLogProgress(Camera, "[PAVST_DEBUG] Using FFmpeg version %s", av_version_info());
+
     ChipLogProgress(Camera, "PushAvStreamTransportManager, Configure Recorder Settings done !!!");
 }
 
