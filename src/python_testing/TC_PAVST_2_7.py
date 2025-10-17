@@ -38,7 +38,7 @@
 # === END CI TEST ARGUMENTS ===
 
 import logging
-
+import time
 from mobly import asserts
 from TC_PAVSTI_Utils import PAVSTIUtils, PushAvServerProcess
 from TC_PAVSTTestBase import PAVSTTestBase
@@ -245,7 +245,7 @@ class TC_PAVST_2_7(MatterBaseTest, PAVSTTestBase, PAVSTIUtils):
             "DUT responds with SUCCESS status code.")
 
         self.step(6)
-        timeControl = {"initialDuration": 1, "augmentationDuration": 1, "maxDuration": 1, "blindDuration": 1}
+        timeControl = {"initialDuration": 20, "augmentationDuration": 1, "maxDuration": 30, "blindDuration": 1}
         cmd = pvcluster.Commands.ManuallyTriggerTransport(
             connectionID=aConnectionID,
             activationReason=pvcluster.Enums.TriggerActivationReasonEnum.kEmergency,
@@ -268,7 +268,7 @@ class TC_PAVST_2_7(MatterBaseTest, PAVSTTestBase, PAVSTIUtils):
             "DUT responds with SUCCESS status code.")
 
         self.step(8)
-        timeControl = {"initialDuration": 1, "augmentationDuration": 1, "maxDuration": 1, "blindDuration": 1}
+        timeControl = {"initialDuration": 20, "augmentationDuration": 1, "maxDuration": 30, "blindDuration": 1}
         cmd = pvcluster.Commands.ManuallyTriggerTransport(
             connectionID=aConnectionID,
             activationReason=pvcluster.Enums.TriggerActivationReasonEnum.kEmergency,
@@ -338,7 +338,7 @@ class TC_PAVST_2_7(MatterBaseTest, PAVSTTestBase, PAVSTIUtils):
         )
 
         self.step(13)
-        timeControl = {"initialDuration": 1, "augmentationDuration": 1, "maxDuration": 1, "blindDuration": 1}
+        timeControl = {"initialDuration": 20, "augmentationDuration": 1, "maxDuration": 30, "blindDuration": 1}
         cmd = pvcluster.Commands.ManuallyTriggerTransport(
             connectionID=aConnectionID,
             activationReason=pvcluster.Enums.TriggerActivationReasonEnum.kUserInitiated,
@@ -394,6 +394,7 @@ class TC_PAVST_2_7(MatterBaseTest, PAVSTTestBase, PAVSTIUtils):
             status == Status.Success,
             "DUT responds with Success status code.",
         )
+        time.sleep(300)
 
 
 if __name__ == "__main__":
