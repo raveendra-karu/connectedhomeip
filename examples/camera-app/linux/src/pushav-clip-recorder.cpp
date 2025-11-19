@@ -905,39 +905,64 @@ void PushAVClipRecorder::FinalizeCurrentClip(int reason)
         return basePath / oss.str();
     };
 
-    std::filesystem::path segment_path = make_segment_path(mUploadSegmentID);
-    while (std::filesystem::exists(segment_path) && !std::filesystem::exists(segment_path.string() + ".tmp"))
+    // Helper function to check if file exists and is not being written to
+    auto file_ready_for_upload = [&](const std::filesystem::path & path) -> bool {
+        return std::filesystem::exists(path) && !std::filesystem::exists(path.string() + ".tmp");
+    };
+
+    std::filesystem::path mpd_path = basePath;
+    mpd_path += ".mpd";
+    const std::filesystem::path init_path = basePath / (mClipInfo.mTrackName + ".init");
+
+    std::filesystem::path first_segment_path = make_segment_path(1);
+    if (mUploadSegmentID == 1 && !file_ready_for_upload(first_segment_path))
     {
-        mUploadMPD                       = true;
-        std::string renamed_segment_path = RenameSegmentFile(segment_path.string());
-        CheckAndUploadFile(renamed_segment_path);
-        mUploadSegmentID++;
-        segment_path = make_segment_path(mUploadSegmentID);
+        return; // Wait for segment_1001.m4s to be created before starting any uploads
     }
 
-    // Handle MPD and init file upload
     if (mUploadMPD)
     {
-        std::filesystem::path mpd_path = basePath;
-        mpd_path += ".mpd";
-        if (std::filesystem::exists(mpd_path) && !std::filesystem::exists(mpd_path.string() + ".tmp"))
+        if (file_ready_for_upload(mpd_path))
         {
             mUploader->setMPDPath(std::make_pair(mpd_path.string(), mClipInfo.mUrl));
             UpdateMPDStartNumber(mpd_path.string());
             CheckAndUploadFile(mpd_path.string());
             mUploadMPD = false; // Reset flag after successful upload
         }
-
-        // Handle init segment upload if needed
-        if (!mUploadedInitSegment)
+        else
         {
-            std::filesystem::path init_path = basePath / (mClipInfo.mTrackName + ".init");
-            if (std::filesystem::exists(init_path) && !std::filesystem::exists(init_path.string() + ".tmp"))
-            {
-                CheckAndUploadFile(init_path.string());
-            }
+            return; // Wait for MPD to be ready before proceeding
+        }
+    }
+
+    if (!mUploadedInitSegment)
+    {
+        if (file_ready_for_upload(init_path))
+        {
+            CheckAndUploadFile(init_path.string());
             mUploadedInitSegment = true;
         }
+        else
+        {
+            return; // Wait for init segment to be ready before proceeding
+        }
+    }
+
+    std::filesystem::path segment_path = make_segment_path(mUploadSegmentID);
+    while (file_ready_for_upload(segment_path))
+    {
+        std::string renamed_segment_path = RenameSegmentFile(segment_path.string());
+        CheckAndUploadFile(renamed_segment_path);
+
+        mUploadSegmentID++;
+
+        if (file_ready_for_upload(mpd_path))
+        {
+            UpdateMPDStartNumber(mpd_path.string());
+            CheckAndUploadFile(mpd_path.string());
+        }
+
+        segment_path = make_segment_path(mUploadSegmentID);
     }
 }
 
