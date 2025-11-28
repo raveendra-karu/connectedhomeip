@@ -71,6 +71,7 @@ void WebrtcTransport::SendVideo(const chip::ByteSpan & data, int64_t timestamp, 
 {
     if (mLocalVideoTrack)
     {
+        std::lock_guard<std::mutex> lock(trackStatusLock);
         mLocalVideoTrack->SendFrame(data, timestamp);
     }
 }
@@ -80,6 +81,7 @@ void WebrtcTransport::SendAudio(const chip::ByteSpan & data, int64_t timestamp, 
 {
     if (mLocalAudioTrack)
     {
+        std::lock_guard<std::mutex> lock(trackStatusLock);
         mLocalAudioTrack->SendFrame(data, timestamp);
     }
 }
@@ -202,7 +204,10 @@ bool WebrtcTransport::ClosePeerConnection()
     {
         return false;
     }
-    mPeerConnection->Close();
+    {
+        std::lock_guard<std::mutex> lock(trackStatusLock);
+        mPeerConnection->Close();
+    }
     mPeerConnection.reset();
 
     return true;
