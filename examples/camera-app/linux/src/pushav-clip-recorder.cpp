@@ -151,35 +151,9 @@ bool PushAVClipRecorder::EnsureDirectoryExists(const std::string & path)
     };
 
     // Ensure base directory exists
-
-    std::string basePathStr = basePath.string();
-    std::string pathExists;
-    pathExists.reserve(basePathStr.length());
-
-    size_t startIndex = (basePathStr[0] == '/') ? 1 : 0;
-
-    for (size_t i = startIndex; i < basePathStr.length(); ++i)
+    if (!ensure(basePath))
     {
-        if (basePathStr[i] == '/' || i == basePathStr.length() - 1)
-        {
-            // Include the current character if it's the last character and not a slash
-            size_t endPos = (basePathStr[i] == '/' && i != basePathStr.length() - 1) ? i : i + 1;
-
-            // Build the path incrementally
-            pathExists = basePathStr.substr(0, endPos);
-
-            // Skip empty paths (can happen with consecutive slashes)
-            if (pathExists.empty() || pathExists.back() == '/')
-            {
-                continue;
-            }
-
-            if (!ensure(pathExists))
-            {
-                ChipLogError(Camera, "Failed to ensure directory exists: %s", pathExists.c_str());
-                return false;
-            }
-        }
+        return false;
     }
 
     // Clean up previous session directory if it exists

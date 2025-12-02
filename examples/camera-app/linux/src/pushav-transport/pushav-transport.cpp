@@ -46,6 +46,8 @@ PushAVTransport::PushAVTransport(const TransportOptionsStruct & transportOptions
         "FabricIdx" + std::to_string(mFabricIndex) + "_ConnectionId" + std::to_string(connectionID) + "_" + datetime_str;
 
     std::filesystem::path outputPath = std::filesystem::path("/tmp") / uniqueDirName / "";
+    // std::filesystem::path outputPath = std::filesystem::path("/tmp") / uniqueDirName;
+
     mClipInfo.mOutputPath            = outputPath.string();
 }
 
