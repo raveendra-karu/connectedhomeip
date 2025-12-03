@@ -629,6 +629,7 @@ int PushAVClipRecorder::ProcessBuffersAndWrite()
         std::string mpdPrefix = "session_" + std::to_string(mClipInfo.mSessionNumber) + std::filesystem::path::preferred_separator +
             mClipInfo.mTrackName;
 
+	mpdPrefix                    = (mClipInfo.mOutputPath.back() == '/' ? "" : "/") + mpdPrefix;
         mInputFormatContext          = avformat_alloc_context();
         int64_t avioCtxBufferSize    = (static_cast<int64_t>(mVideoInfo.mBitRate) * mClipInfo.mSegmentDurationMs) / (8 * 1000);
         uint8_t * mAvioContextBuffer = static_cast<uint8_t *>(av_malloc(static_cast<size_t>(avioCtxBufferSize)));
