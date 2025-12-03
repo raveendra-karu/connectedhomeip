@@ -134,7 +134,7 @@ class TC_PAVST_2_11(MatterBaseTest, PAVSTTestBase, PAVSTIUtils):
             TestStep(
                 12,
                 "TH Reads CurrentConnections attribute from PushAV Stream Transport Cluster on DUT",
-                "Verify the number of PushAV Connections is 0.",
+                "Verify the number of PushAV Connections is 0. If not 0, deallocate any existing connections.",
             ),
             TestStep(
                 13,
