@@ -113,7 +113,7 @@ class TC_PAVST_2_11(MatterBaseTest, PAVSTTestBase, PAVSTIUtils):
             ),
             TestStep(
                 8,
-                "Trigger the DUT to generate PushAV Event",
+                "TMotion Event triggers the DUT to generate PushAV Event",
                 "Successful completion of steps"
             ),
             TestStep(
@@ -138,7 +138,7 @@ class TC_PAVST_2_11(MatterBaseTest, PAVSTTestBase, PAVSTIUtils):
             ),
             TestStep(
                 13,
-                "Trigger the DUT to generate PushAV Event",
+                "Motion Event triggers the DUT to generate PushAV Event",
                 "Successful completion of steps."
             ),
             TestStep(
